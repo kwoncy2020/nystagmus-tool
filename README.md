@@ -23,5 +23,5 @@ and this also allow to see the eye-center-time-series movements graph with extra
 ![mask made](./images/tool3.png)
 
 ***
-* There's sub window to find nystagmus quickly.
+* There's sub window to find nystagmus quickly. (index extractor)
 ![index extractor](./images/tool4.png)

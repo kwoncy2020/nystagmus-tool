@@ -10,6 +10,7 @@ from typing import Union, Tuple, List, Set, Dict
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+CURRENT_DEVICE = "/device:CPU:0"
 
 
 class FeatureExtractor:
@@ -29,12 +30,44 @@ class FeatureExtractor:
         #     y_pred_f = K.flatten(y_pred)
         #     intersection = K.sum(y_true_f * y_pred_f)
         #     return (2. * intersection + K.epsilon()) / (K.sum(y_true_f) + K.sum(y_pred_f) + K.epsilon())
+    
+    def get_dict_from_preds(self, preds) -> dict:
+        center_indices = []
+        roundnesses = []
+        widths = []
+        heights = []
+        radians = []
+
+        for pred in preds:
+            infos = self.eval_tool.get_calib_ellipse_info2(pred)
+            if infos:
+                center, w, h, radian = infos
+                if w > h:
+                    roundness = h/w
+                else:
+                    roundness = w/h
+                center_indices.append(list(center))
+                widths.append(w)
+                heights.append(h)
+                radians.append(radian)
+                roundnesses.append(roundness)
+            else :
+                center_indices.append([None, None])
+                widths.append(None)
+                heights.append(None)
+                radians.append(None)
+                roundnesses.append(0)
+        
+        return {'centers': center_indices, 'roundnesses': roundnesses, 'widths': widths, 'heights': heights, 'radians': radians}
 
 
-    def extract_features_batch(self, video_file_path: str, MODEL_NAME: str) -> dict:
+
+    def extract_ellipse_infos_dict_on_video(self, video_file_path: str, MODEL_NAME: str) -> dict:
+        ## prepare to resize video frame images
         MODEL_HEIGHT = self.MODEL_HEIGHT
         MODEL_WIDTH = self.MODEL_WIDTH
         
+        ## load video
         if os.path.isfile(video_file_path):
             cap = cv2.VideoCapture(video_file_path)
         else:
@@ -58,11 +91,13 @@ class FeatureExtractor:
                 break
 
             frames.append(frame)
+       
         ## reading frames done
         end_time = time.time()
         print("read video done. time: ", end_time - start_time)
         print("length of frames: ", len(frames))
         start_time = end_time
+        cap.release()
 
         ## resizing frames and convert to gray
         if video_frame_height != MODEL_HEIGHT or video_frame_width != (MODEL_WIDTH *2):
@@ -85,8 +120,8 @@ class FeatureExtractor:
         print("normalize, seperate done. time: ", end_time - start_time)
         start_time = end_time
 
-
-        with tf.device("/device:CPU:0"):
+        ## model predict
+        with tf.device(CURRENT_DEVICE):
             model = load_model(MODEL_NAME, custom_objects={'dice_score': self.dice_score})
             index = 0
 
@@ -105,64 +140,14 @@ class FeatureExtractor:
             right_preds = np.squeeze(right_preds)
             right_preds = (right_preds > 0.5).astype(np.uint8)
             
-        left_center_indices = []
-        left_roundnesses = []
-        left_widths = []
-        left_heights = []
-        left_radians = []
+        left_dict = self.get_dict_from_preds(left_preds)
+        right_dict = self.get_dict_from_preds(right_preds)
 
-        right_center_indices = []
-        right_roundnesses = []
-        right_widths = []
-        right_heights = []
-        right_radians = []
-
-        for pred in left_preds:
-            infos = self.eval_tool.get_calib_ellipse_info2(pred)
-            if infos:
-                center, w, h, radian = infos
-                if w > h:
-                    roundness = h/w
-                else:
-                    roundness = w/h
-                left_center_indices.append(list(center))
-                left_widths.append(w)
-                left_heights.append(h)
-                left_radians.append(radian)
-                left_roundnesses.append(roundness)
-            else :
-                left_center_indices.append([None, None])
-                left_widths.append(None)
-                left_heights.append(None)
-                left_radians.append(None)
-                left_roundnesses.append(0)
-
-        for pred in right_preds:
-            infos = self.eval_tool.get_calib_ellipse_info2(pred)
-            if infos:
-                center, w, h, radian = infos
-                if w > h:
-                    roundness = h/w
-                else:
-                    roundness = w/h
-                right_center_indices.append(list(center))
-                right_widths.append(w)
-                right_heights.append(h)
-                right_radians.append(radian)
-                right_roundnesses.append(roundness)
-            else :
-                right_center_indices.append([None, None])
-                right_widths.append(None)
-                right_heights.append(None)
-                right_radians.append(None)
-                right_roundnesses.append(0)
-
-        return {'left_centers': left_center_indices, 'left_roundnesses': left_roundnesses, 'left_widths': left_widths, 'left_heights' : left_heights, 'left_radians' : left_radians \
-                , 'right_centers': right_center_indices, 'right_roundnesses': right_roundnesses, 'right_widths': right_widths, 'right_heights': right_heights, 'right_radians': right_radians}
+        return {'left_centers': left_dict["centers"], 'left_roundnesses': left_dict["roundnesses"], 'left_widths': left_dict["widths"], 'left_heights' : left_dict["heights"], 'left_radians' : left_dict["radians"] \
+                , 'right_centers': right_dict["centers"], 'right_roundnesses': right_dict["roundnesses"], 'right_widths': right_dict["widths"], 'right_heights': right_dict["heights"], 'right_radians': right_dict["radians"]}
 
             
-
-
+    ## no longer use, will be deprecated
     def extract_indices(self,video_file_path, MODEL_NAME) -> list:
         MODEL_HEIGHT = self.MODEL_HEIGHT
         MODEL_WIDTH = self.MODEL_WIDTH
@@ -182,7 +167,7 @@ class FeatureExtractor:
         l_right_roundness = []
         l_right_result_imgs = []
 
-        with tf.device("/device:CPU:0"):
+        with tf.device(CURRENT_DEVICE):
             model = load_model(MODEL_NAME, custom_objects={'dice_score': self.dice_score})
             
             index = 0
@@ -610,27 +595,64 @@ class FeatureExtractor:
             raise Exception("from get_inner_range: input(data) should be list or np.array")
         if not isinstance(data, np.ndarray):
             data = np.array(data)
+        if len(data) == 1:
+            return data
+
+        # temp_prev_value = data[0]
+        # connected_value_head = None
+        # connected_value_tail = None
+        # FLAG_CONNECT_ON = False
+        # result = []
+        # for index, value in enumerate(data[1:]):
+        #     if temp_prev_value + 1 == value:
+        #         if FLAG_CONNECT_ON == False:
+        #             FLAG_CONNECT_ON = True
+        #             connected_value_head = temp_prev_value
+                
+        #         elif FLAG_CONNECT_ON == True:
+        #             connected_value_tail = value
+        #             if index == len(data[1:])-1:
+        #                 if connected_value_head == connected_value_tail:
+        #                     result.append([connected_value_head])
+        #                 else:
+        #                     result.append([connected_value_head, connected_value_tail])
+        #     else:
+        #         if FLAG_CONNECT_ON == True:
+        #             connected_value_tail = temp_prev_value
+        #             result.append([connected_value_head, connected_value_tail])
+        #             FLAG_CONNECT_ON = False
+        #         else:
+        #             result.append([temp_prev_value])
+
+        #     temp_prev_value = value
+
+        # return result
         
-        temp_prev_index = data[0]
-        connected_index_head = None
+        last_index = len(data)-1
+        results = []
+        temp_list = []
         FLAG_CONNECT_ON = False
-        result = []
-        for index in data[1:]:
-            if temp_prev_index + 1 == index:
+        for index in range(last_index):
+            current_value = data[index]
+            next_value = data[index+1]
+            if next_value == current_value+1:
                 if FLAG_CONNECT_ON == False:
                     FLAG_CONNECT_ON = True
-                    connected_index_head = temp_prev_index
+                    temp_list = [current_value, next_value]
+                else:
+                    temp_list = [temp_list[0], next_value]
             else:
                 if FLAG_CONNECT_ON == True:
-                    connected_index_tail = temp_prev_index
-                    result.append([connected_index_head, connected_index_tail])
                     FLAG_CONNECT_ON = False
+                    results.append(temp_list)
                 else:
-                    result.append([temp_prev_index])
+                    results.append([current_value])
+            if index == last_index-1:
+                results.append(temp_list)
+        
+        return results
 
-            temp_prev_index = index
 
-        return result
 
     def connect_curves(self, data:np.ndarray, curve_indices:np.ndarray, start_curve_index:int, end_curve_index:int) -> 'list[np.ndarray, List[int]]':
         if start_curve_index >= end_curve_index:

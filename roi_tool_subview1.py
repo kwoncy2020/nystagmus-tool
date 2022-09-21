@@ -1,4 +1,4 @@
-import sys, time, cv2, csv, os
+import sys, time, cv2, csv, os, re
 from PyQt5.QtWidgets import *
 from PyQt5 import QtCore, QtGui
 import numpy as np
@@ -470,28 +470,32 @@ class MyGuiModule(QWidget):
 
         
         fixed_width = 55
-        self.gbox_filter = QGroupBox("filter")
+        self.gbox_filter = QGroupBox("filter curve2linear(2,3, d_thres, f_thres)")
+        self.gbox_filter.setCheckable(True)
+        self.gbox_filter.setChecked(False)
         self.gbox_filter.setStyleSheet("QGroupBox { border: 1px solid black;}")
         self.hlayout_gbox_filter = QHBoxLayout()
 
-        self.radio_filter_activate = MyQRadioButton("",parent=self)
+        self.radio_filter_curve2linear = MyQRadioButton("",parent=self)
+        self.radio_filter_curve2linear3 = MyQRadioButton("",parent=self)
         self.ledit_filter_distance_thres = MyQLineEdit()
-        self.ledit_filter_distance_thres.setPlaceholderText("d_thres")
-        self.ledit_filter_distance_thres.setDisabled(True)
+        self.ledit_filter_distance_thres.setPlaceholderText("d")
+        # self.ledit_filter_distance_thres.setDisabled(True)
         self.ledit_filter_frames_thres = MyQLineEdit()
-        self.ledit_filter_frames_thres.setPlaceholderText("f_thres")
-        self.ledit_filter_frames_thres.setDisabled(True)
+        self.ledit_filter_frames_thres.setPlaceholderText("f")
+        # self.ledit_filter_frames_thres.setDisabled(True)
         self.btn_filter_change = MyQPushButton("change")
-        self.btn_filter_change.setDisabled(True)
+        # self.btn_filter_change.setDisabled(True)
         self.btn_filter_change.setFixedWidth(fixed_width)
         self.btn_filter_erased_prev = MyQPushButton("e_prev")
-        self.btn_filter_erased_prev.setDisabled(True)
+        # self.btn_filter_erased_prev.setDisabled(True)
         self.btn_filter_erased_prev.setFixedWidth(fixed_width)
         self.btn_filter_erased_next = MyQPushButton("e_next")
-        self.btn_filter_erased_next.setDisabled(True)
+        # self.btn_filter_erased_next.setDisabled(True)
         self.btn_filter_erased_next.setFixedWidth(fixed_width)
 
-        self.hlayout_gbox_filter.addWidget(self.radio_filter_activate)
+        self.hlayout_gbox_filter.addWidget(self.radio_filter_curve2linear)
+        self.hlayout_gbox_filter.addWidget(self.radio_filter_curve2linear3)
         self.hlayout_gbox_filter.addWidget(self.ledit_filter_distance_thres)
         self.hlayout_gbox_filter.addWidget(self.ledit_filter_frames_thres)
         self.hlayout_gbox_filter.addWidget(self.btn_filter_change)
@@ -731,7 +735,9 @@ class MyGuiModule(QWidget):
         self.connect_ctl()
 
     def connect_ctl(self):
-        self.radio_filter_activate.toggled.connect(self.cb_radio_filter_activate)
+        self.gbox_filter.toggled.connect(self.cb_gbox_filter)
+        self.radio_filter_curve2linear.toggled.connect(self.cb_radio_filter_curve2linear)
+        self.radio_filter_curve2linear3.toggled.connect(self.cb_radio_filter_curve2linear3)
         self.btn_filter_change.clicked.connect(self.cb_btn_filter_change)
         self.btn_filter_erased_prev.clicked.connect(self.cb_btn_filter_erased_prev)
         self.btn_filter_erased_next.clicked.connect(self.cb_btn_filter_erased_next)
@@ -792,7 +798,7 @@ class MyGuiModule(QWidget):
         self.update_index()
 
     def __del__(self):
-        del self.radio_filter_activate
+        del self.radio_filter_curve2linear
         del self.radio_statistics_entire_gradient_outlier_activate
         del self.radio_statistics_dist_outlier_activate
         del self.radio_statistics_curve_gradient_outlier_activate
@@ -823,35 +829,46 @@ class MyGuiModule(QWidget):
         del self.d_inferred_info
         print("subview_module deleted")
 
-    def cb_radio_filter_activate(self):
-        if self.radio_filter_activate.isChecked():
-            self.cb_btn_filter_change()
-            ## self.current_upper_outlier_indices depends on the x_list( processed or filtered )
-            self.cb_btn_statistics_outlier_change()
-            self.ledit_filter_distance_thres.setDisabled(False)
-            self.ledit_filter_frames_thres.setDisabled(False)
-            self.btn_filter_change.setDisabled(False)
-            self.btn_filter_erased_prev.setDisabled(False)
-            self.btn_filter_erased_next.setDisabled(False)
+
+    def cb_gbox_filter(self):
+        if self.gbox_filter.isChecked():
+             self.cb_btn_filter_change()
         else:
             self.change_current_selected_x_list(self.processed_x_list)
-            self.update_index()
-            ## self.current_upper_outlier_indices depends on the x_list( processed or filtered )
-            self.cb_btn_statistics_outlier_change()
-            self.ledit_filter_distance_thres.setDisabled(True)
-            self.ledit_filter_frames_thres.setDisabled(True)
-            self.btn_filter_change.setDisabled(True)
-            self.btn_filter_erased_prev.setDisabled(True)
-            self.btn_filter_erased_next.setDisabled(True)
+            # self.update_index()
+        ## self.current_upper_outlier_indices depends on the x_list( processed or filtered )
+        self.cb_btn_statistics_outlier_change()
 
-    def cb_btn_filter_change(self):
+    def cb_radio_filter_curve2linear(self):
+        if self.radio_filter_curve2linear.isChecked():
+            self.cb_btn_filter_change()
+        
+    def cb_radio_filter_curve2linear3(self):
+        if self.radio_filter_curve2linear3.isChecked():
+            self.cb_btn_filter_change()
+        
+
+    def cb_btn_filter_change(self): 
+        flag_filter_curve2linear = self.radio_filter_curve2linear.isChecked()
+        flag_filter_curve2linear3 = self.radio_filter_curve2linear3.isChecked()
+
         d_thres = self.get_ledit_value(self.ledit_filter_distance_thres)
         f_thres = self.get_ledit_value(self.ledit_filter_frames_thres)
 
+        if d_thres == 0 : return
         if d_thres == '': d_thres=2
-        if f_thres == '': f_thres=15
+        if f_thres == '': f_thres=5
 
-        self.filtered_x_list, self.erased_curves_by_filter = self.myfe.filter_curve2linear(self.processed_x_list,d_thres,f_thres)
+        if flag_filter_curve2linear:
+            self.filtered_x_list, self.erased_curves_by_filter, _ = self.myfe.filter_curve2linear(self.processed_x_list,d_thres,f_thres)
+        elif flag_filter_curve2linear3:
+            self.filtered_x_list, self.erased_curves_by_filter, required_consider_edge_curve_list = self.myfe.filter_curve2linear(self.processed_x_list,d_thres,f_thres)
+            curve_indices = self.myfe.get_curve_indices(self.filtered_x_list)
+            edge_indices = np.append(curve_indices, required_consider_edge_curve_list)
+            edge_indices = np.unique(edge_indices)
+            self.filtered_x_list, self.erased_curves_by_filter3 = self.myfe.filter_curve2linear3(self.filtered_x_list,edge_indices)
+            self.erased_curves_by_filter = np.append(self.erased_curves_by_filter, self.erased_curves_by_filter3)
+        
         self.change_current_selected_x_list(self.filtered_x_list)
         self.update_index()
 
@@ -1267,7 +1284,7 @@ class MyGuiModule(QWidget):
         # self.current_selected_x_list = x_list.copy()
         self.current_selected_x_list = x_list
         self.curve_indices = self.myfe.get_curve_indices(self.current_selected_x_list)
-        info_dict = self.myfe.get_nystagmus_infos(self.current_selected_x_list)
+        info_dict = self.myfe.get_gradients_infos(self.current_selected_x_list)
         self.diffs = info_dict['diffs']
         self.diff_ratios = info_dict['diff_ratios']
         self.nystagmus_indices = self.myfe.get_nystagmus_indices(self.current_selected_x_list,info_dict=info_dict)
@@ -1364,7 +1381,15 @@ class MyGuiModule(QWidget):
         elif text.isdigit():
             return int(text)
         else:
-            raise Exception(f"from get_ledit_value: value has not numeric character ({text})")
+            ## without regex, input(1.5) will be cause exception of not digit.
+            ## detecting float value required
+
+            rec = re.compile('\d+[.]\d')
+            match = rec.match(text)
+            if match:
+                return float(text) 
+            else:
+                raise Exception(f"from get_ledit_value: value has not numeric character ({text})")
     
     def get_valid_index(self, int_):
         if int_ < 0:
@@ -1561,7 +1586,7 @@ class MyGuiModule(QWidget):
         self.current_selected_x_list = self.processed_x_list
         self.processed_y_list = np_y_points
 
-        self.filtered_x_list, self.erased_curves_by_filter = self.myfe.filter_curve2linear(self.processed_x_list,thres=2,frames_thres=15)
+        self.filtered_x_list, self.erased_curves_by_filter, _ = self.myfe.filter_curve2linear(self.processed_x_list)
 
         # np_x_points_modified = np_x_points - np_x_points.mean()
         # np_y_points_modified = np_y_points - np_y_points.mean()

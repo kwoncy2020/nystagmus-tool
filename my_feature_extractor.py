@@ -588,6 +588,22 @@ class FeatureExtractor:
         
         return indices_curve
 
+    def get_bent_indices(self, data:Union[list,np.ndarray]) -> np.ndarray:
+        if not isinstance(data, list) and not isinstance(data, np.ndarray):
+            raise Exception("from get_bent_indices: input(data) should be list or np.array")
+        if not isinstance(data, np.ndarray):
+            data = np.array(data)
+
+        diffs = data[1:] - data[:-1]
+        bent_indices = []
+        for idx in range(len(diffs)-1):
+            if diffs[idx] != diffs[idx+1]:
+                bent_indices.append(idx+1)
+
+        raise NotImplementedError()
+
+
+
 
     def get_grouped_sequence(self, data : Union[list, np.ndarray]) -> 'list[list[int]]':
         # make sequence grouped. ex) data = [1,2,3,6,7,9,12,15,16,17], result = [[1,3],[6,7],[9],[12],[15,17]]
@@ -597,36 +613,6 @@ class FeatureExtractor:
             data = np.array(data)
         if len(data) == 1:
             return data
-
-        # temp_prev_value = data[0]
-        # connected_value_head = None
-        # connected_value_tail = None
-        # FLAG_CONNECT_ON = False
-        # result = []
-        # for index, value in enumerate(data[1:]):
-        #     if temp_prev_value + 1 == value:
-        #         if FLAG_CONNECT_ON == False:
-        #             FLAG_CONNECT_ON = True
-        #             connected_value_head = temp_prev_value
-                
-        #         elif FLAG_CONNECT_ON == True:
-        #             connected_value_tail = value
-        #             if index == len(data[1:])-1:
-        #                 if connected_value_head == connected_value_tail:
-        #                     result.append([connected_value_head])
-        #                 else:
-        #                     result.append([connected_value_head, connected_value_tail])
-        #     else:
-        #         if FLAG_CONNECT_ON == True:
-        #             connected_value_tail = temp_prev_value
-        #             result.append([connected_value_head, connected_value_tail])
-        #             FLAG_CONNECT_ON = False
-        #         else:
-        #             result.append([temp_prev_value])
-
-        #     temp_prev_value = value
-
-        # return result
         
         last_index = len(data)-1
         results = []
@@ -651,7 +637,6 @@ class FeatureExtractor:
                 results.append(temp_list)
         
         return results
-
 
 
     def connect_curves(self, data:np.ndarray, curve_indices:np.ndarray, start_curve_index:int, end_curve_index:int) -> 'list[np.ndarray, List[int]]':
@@ -801,7 +786,7 @@ class FeatureExtractor:
         return result
 
 
-    def filter_curve2linear(self, data, thres=2, frames_thres=5) -> 'list[np.ndarray, np.ndarray, np.ndarray]':
+    def filter_curve2linear(self, data:Union[np.ndarray,list], value_distance_thres:float=2.0, frames_thres:int=5) -> 'list[np.ndarray, np.ndarray, np.ndarray]':
         # input(data) should be derived from low_pass_filter
         # thres is the threshold distance between two of connected curve
         # frame_distance_thres is the threshold for the horizontal wave to make flat
@@ -818,7 +803,7 @@ class FeatureExtractor:
         
         values = data[curve_indices]
         distances = abs(values[1:] - values[:-1])
-        erase_distance_index_list = np.where(distances < thres)[0]
+        erase_distance_index_list = np.where(distances < value_distance_thres)[0]
 
         erase_distance_grouped_index_list = self.get_grouped_sequence(erase_distance_index_list)
         
@@ -832,6 +817,8 @@ class FeatureExtractor:
                 erase_distance_grouped_index_list_2[idx] = [first_value, last_value+1]
 
         erased_curve_index_list = []
+        ## required_consider_edge_curve is needed when have second filtering with curve2linear3
+        required_consider_edge_curve_list = []
         for grouped_index in erase_distance_grouped_index_list_2:
             erase_distance_index_start, erase_distance_index_end = grouped_index
             ## not good result when it comes to outside of the tip, just skip
@@ -851,6 +838,9 @@ class FeatureExtractor:
                 ## check if the frame_distance is over thres
                 frames = (curve_indices[erase_distance_index_end] - curve_indices[erase_distance_index_start])
                 if frames > frames_thres:
+                    required_consider_edge_curve_list.append(erase_distance_index_start)
+                    required_consider_edge_curve_list.append(erase_distance_index_end)
+                    
                     self.connect_curves2(result,curve_indices,[[erase_distance_index_start, erase_distance_index_end]])
                     for i in range(erase_distance_index_start,erase_distance_index_end+1):
                         erased_curve_index_list.append(i)
@@ -865,10 +855,12 @@ class FeatureExtractor:
 
 
         erased_curve_index_list = np.array(erased_curve_index_list)
+        required_consider_edge_curve_list = np.array(required_consider_edge_curve_list)
+        return [result, curve_indices[erased_curve_index_list], curve_indices[required_consider_edge_curve_list]]
         
-        return [result, curve_indices[erased_curve_index_list]]
         # return [result, curve_indices[erase_distance_index_list]]
         # return [result, curve_indices[np.unique(erase_distance_grouped_index_list_2)]]
+
 
     def filter_curve2linear2(self, data:Union[list,np.ndarray], thres:int=2, frames_thres:int=15) -> 'list[np.ndarray, np.ndarray, np.ndarray]':
         # input(data) should be derived from low_pass_filter
@@ -951,6 +943,45 @@ class FeatureExtractor:
         return [result, erased_curve_indices]
     
 
+    def filter_curve2linear3(self, data:Union[np.ndarray,list], edge_curve_indices:np.ndarray, value_distance_thres:float=1.0, frame_distance_thres:int=5) -> 'list[np.ndarray, np.ndarray]':
+        ## this filter do easy mechanism to erase curve within value_distance_thres
+        ## this function should come after using filter_curve2linear since this function will use consider edge curve indices
+        if not isinstance(data, list) and not isinstance(data, np.ndarray):
+            raise Exception("from get_inner_range: input(data) should be list or np.array")
+        if not isinstance(data, np.ndarray):
+            data = np.array(data)
+
+        new_datas = data.copy()
+        edge_indices = edge_curve_indices.copy()
+        erased_curves_indices = []
+        
+        flag_no_erased_curve = True
+        while True:
+            if flag_no_erased_curve == False:
+                break
+            
+            values = data[edge_indices]
+            value_distances = abs(values[1:]-values[:-1])
+            value_distances = np.insert(value_distances, 0, 0)
+            frame_distances = abs(edge_indices[1:]-edge_indices[:-1])
+            frame_distances = np.insert(frame_distances, 0, 0)
+
+            flag_no_erased_curve = False    
+            
+            for index in range(1,len(value_distances)):
+                if value_distances[index] < value_distance_thres:
+                    if frame_distances[index] < frame_distance_thres:
+                        flag_no_erased_curve = True
+                        erased_curves_indices.append(edge_indices[index])
+                        start_curve = edge_indices[index-1]
+                        end_curve = edge_indices[index+1]
+                        temp = np.linspace(new_datas[start_curve], new_datas[end_curve], end_curve-start_curve+1)
+                        new_datas[start_curve:end_curve+1] = temp
+                        edge_indices = np.append(edge_indices[:index],edge_indices[index+1:])
+                        break
+        
+        return [new_datas, np.array(erased_curves_indices)]
+
     def get_intersect_point(self,a: 'list[float,float]',b:'list[float,float]',c:'list[float,float]',d:'list[float,float]') -> 'list[float, float]':
         ## https://stackoverflow.com/questions/20677795/how-do-i-compute-the-intersection-point-of-two-lines
         ## Gabriel Eng : Using formula from: https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
@@ -981,7 +1012,9 @@ class FeatureExtractor:
         return data[(data >= start) & (data <= end)]
 
 
-    def get_nystagmus_infos(self, data:np.ndarray, curve_indices:np.ndarray=None) -> 'dict[np.ndarray]':
+    def get_gradients_infos(self, data:np.ndarray, curve_indices:np.ndarray=None) -> 'dict[np.ndarray]':
+        ## return infos about gradient on curve point and gradient ratio between a curve and its next one  
+        
         if not isinstance(curve_indices, np.ndarray):
             curve_indices = self.get_curve_indices(data)
         data = np.float32(data)
@@ -1033,11 +1066,12 @@ class FeatureExtractor:
         # return np.where(bool_indices_dystagmus==True)[0]
         return {'distances1':distances1, 'distances2':distances2, 'diffs':diffs, 'diff_ratios':diff_ratios}
 
+
     def get_nystagmus_indices(self, data:np.ndarray, curve_indices:np.ndarray=None, info_dict:dict = None)->np.ndarray:
         ## data must have no None value, only numeric.
         
-        diff1_min_limit = 0.5
-        diff2_min_limit = 0.15
+        diff1_min_limit = 0.4
+        diff2_min_limit = 0.05
         diff_ratio_min_limit = 0.7
         diff_ratio_max_limit = np.inf
         distance1_min_limit = 1
@@ -1045,7 +1079,7 @@ class FeatureExtractor:
     
         
         if not isinstance(info_dict,dict):
-            info_dict = self.get_nystagmus_infos(data)
+            info_dict = self.get_gradients_infos(data)
 
         distances1 = info_dict['distances1']
         distances2 = info_dict['distances2']
@@ -1097,7 +1131,7 @@ class FeatureExtractor:
 
     def make_candidate_curve_indices(self, data:np.ndarray)->np.ndarray:
         curve_indices = self.get_curve_indices(data)
-        info_dict = self.get_nystagmus_infos(data)
+        info_dict = self.get_gradients_infos(data)
         nystagmus_indices1 = self.get_nystagmus_indices(data, curve_indices=curve_indices, info_dict=info_dict)
         outlier_indices1, lower_bound1, upper_bound1 = self.get_outlier_indices(data,iqr_multiplier_x10=15,partial='all',flag_curve=False)
         outlier_indices2, lower_bound2, upper_bound2 = self.get_outlier_indices(data,iqr_multiplier_x10=15,partial='upper',flag_curve=False)

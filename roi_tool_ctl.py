@@ -592,6 +592,7 @@ class MainCtl():
             self.subview.set_new_data(data_lt = self.l_resized_frames_lt, data_rt = self.l_resized_frames_rt, d_inferred_info_lt=d_lt_inferred_info, d_inferred_info_rt=d_rt_inferred_info, parent =self)
             self.subview.setWindowTitle(f"index extractor / {self.FILE_NAME_WITH_EXT}")
         self.subview.show()
+        
     def cb_info2_btn_goto_index(self):
         if not self.flag_video_on:
             return False

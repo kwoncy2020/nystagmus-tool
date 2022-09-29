@@ -1,6 +1,6 @@
 # nystagmus-tool
 
-Since I made this tool to make my project easy for several weeks in a super hurry(ver 1.0, only takes 4 days), it's quite rough and raw.
+Since I made this tool to make my project easy during several weeks in a super hurry(ver 1.0, only takes 4 days), it's quite rough and raw.
 You can see some of improvements to adopt type hint, multi threading, mvc patten etc.
 I need to upgrade this tool left and right. 
 

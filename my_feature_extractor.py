@@ -12,7 +12,6 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 CURRENT_DEVICE = "/device:CPU:0"
 
-
 class FeatureExtractor:
 
     def __init__(self):
@@ -30,7 +29,7 @@ class FeatureExtractor:
         #     y_pred_f = K.flatten(y_pred)
         #     intersection = K.sum(y_true_f * y_pred_f)
         #     return (2. * intersection + K.epsilon()) / (K.sum(y_true_f) + K.sum(y_pred_f) + K.epsilon())
-    
+
     def get_dict_from_preds(self, preds) -> dict:
         center_indices = []
         roundnesses = []
@@ -59,7 +58,6 @@ class FeatureExtractor:
                 roundnesses.append(0)
         
         return {'centers': center_indices, 'roundnesses': roundnesses, 'widths': widths, 'heights': heights, 'radians': radians}
-
 
 
     def extract_ellipse_infos_dict_on_video(self, video_file_path: str, MODEL_NAME: str) -> dict:
@@ -91,7 +89,7 @@ class FeatureExtractor:
                 break
 
             frames.append(frame)
-       
+
         ## reading frames done
         end_time = time.time()
         print("read video done. time: ", end_time - start_time)
@@ -139,7 +137,7 @@ class FeatureExtractor:
             left_preds = (left_preds > 0.5).astype(np.uint8)
             right_preds = np.squeeze(right_preds)
             right_preds = (right_preds > 0.5).astype(np.uint8)
-            
+
         left_dict = self.get_dict_from_preds(left_preds)
         right_dict = self.get_dict_from_preds(right_preds)
 
@@ -593,38 +591,37 @@ class FeatureExtractor:
             raise Exception("from get_bent_indices: input(data) should be list or np.array")
         if not isinstance(data, np.ndarray):
             data = np.array(data)
+        
+        temp_prev_index = data[0]
+        connected_index_head = None
+        FLAG_CONNECT_ON = False
+        result = []
+        for index in data[1:]:
+            if temp_prev_index + 1 == index:
+                if FLAG_CONNECT_ON == False:
+                    FLAG_CONNECT_ON = True
+                    connected_index_head = temp_prev_index
+            else:
+                if FLAG_CONNECT_ON == True:
+                    connected_index_tail = temp_prev_index
+                    result.append([connected_index_head, connected_index_tail])
+                    FLAG_CONNECT_ON = False
+                else:
+                    result.append([temp_prev_index])
+
+            temp_prev_index = index
+
+        return result
+
+
+    def get_grouped_sequence(self, data : Union[list, np.ndarray]) -> 'list[list[int]]':
+        # make sequence grouped. ex) data = [1,2,3,6,7,9,12,15,16,17], result = [[1,3],[6,7],[9],[12],[15,17]]
+        if not isinstance(data, list) and not isinstance(data, np.ndarray):
+            raise Exception("from get_inner_range: input(data) should be list or np.array")
+        if not isinstance(data, np.ndarray):
+            data = np.array(data)
         if len(data) == 1:
             return data
-
-        # temp_prev_value = data[0]
-        # connected_value_head = None
-        # connected_value_tail = None
-        # FLAG_CONNECT_ON = False
-        # result = []
-        # for index, value in enumerate(data[1:]):
-        #     if temp_prev_value + 1 == value:
-        #         if FLAG_CONNECT_ON == False:
-        #             FLAG_CONNECT_ON = True
-        #             connected_value_head = temp_prev_value
-                
-        #         elif FLAG_CONNECT_ON == True:
-        #             connected_value_tail = value
-        #             if index == len(data[1:])-1:
-        #                 if connected_value_head == connected_value_tail:
-        #                     result.append([connected_value_head])
-        #                 else:
-        #                     result.append([connected_value_head, connected_value_tail])
-        #     else:
-        #         if FLAG_CONNECT_ON == True:
-        #             connected_value_tail = temp_prev_value
-        #             result.append([connected_value_head, connected_value_tail])
-        #             FLAG_CONNECT_ON = False
-        #         else:
-        #             result.append([temp_prev_value])
-
-        #     temp_prev_value = value
-
-        # return result
         
         last_index = len(data)-1
         results = []
@@ -649,7 +646,6 @@ class FeatureExtractor:
                 results.append(temp_list)
         
         return results
-
 
 
     def connect_curves(self, data:np.ndarray, curve_indices:np.ndarray, start_curve_index:int, end_curve_index:int) -> 'list[np.ndarray, List[int]]':

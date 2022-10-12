@@ -855,8 +855,10 @@ class FeatureExtractor:
 
 
         erased_curve_index_list = np.array(erased_curve_index_list)
-        required_consider_edge_curve_list = np.array(required_consider_edge_curve_list)
-        return [result, curve_indices[erased_curve_index_list], curve_indices[required_consider_edge_curve_list]]
+        # required_consider_edge_curve_list = np.array(required_consider_edge_curve_list)
+        # return [result, curve_indices[erased_curve_index_list], curve_indices[required_consider_edge_curve_list]]
+        required_consider_edge_curve_indices = [i for i in curve_indices if i not in erased_curve_index_list]
+        return [result, curve_indices[erased_curve_index_list], np.array(required_consider_edge_curve_indices)]
         
         # return [result, curve_indices[erase_distance_index_list]]
         # return [result, curve_indices[np.unique(erase_distance_grouped_index_list_2)]]
@@ -943,7 +945,7 @@ class FeatureExtractor:
         return [result, erased_curve_indices]
     
 
-    def filter_curve2linear3(self, data:Union[np.ndarray,list], edge_curve_indices:np.ndarray, value_distance_thres:float=1.0, frame_distance_thres:int=5) -> 'list[np.ndarray, np.ndarray]':
+    def filter_curve2linear3(self, data:Union[np.ndarray,list], required_consider_curve_indices:np.ndarray, value_distance_thres:float=1.0, frame_distance_thres:int=5) -> 'list[np.ndarray, np.ndarray]':
         ## this filter do easy mechanism to erase curve within value_distance_thres
         ## this function should come after using filter_curve2linear since this function will use consider edge curve indices
         if not isinstance(data, list) and not isinstance(data, np.ndarray):
@@ -952,7 +954,7 @@ class FeatureExtractor:
             data = np.array(data)
 
         new_datas = data.copy()
-        edge_indices = edge_curve_indices.copy()
+        edge_indices = required_consider_curve_indices.copy()
         erased_curves_indices = []
         
         flag_no_erased_curve = True
@@ -965,22 +967,34 @@ class FeatureExtractor:
             value_distances = np.insert(value_distances, 0, 0)
             frame_distances = abs(edge_indices[1:]-edge_indices[:-1])
             frame_distances = np.insert(frame_distances, 0, 0)
-
+            diffs = value_distances / (frame_distances + 1e-7)
             flag_no_erased_curve = False    
             
-            for index in range(1,len(value_distances)):
+            for index in range(2,len(value_distances)-1):
                 if value_distances[index] < value_distance_thres:
                     if frame_distances[index] < frame_distance_thres:
                         flag_no_erased_curve = True
-                        erased_curves_indices.append(edge_indices[index])
-                        start_curve = edge_indices[index-1]
-                        end_curve = edge_indices[index+1]
+                        
+                        prev_diff = diffs[index-1]
+                        curr_diff = diffs[index]
+                        next_diff = diffs[index+1]
+
+                        if next_diff < prev_diff:
+                            start_index = index
+                        else:
+                            start_index = index -1
+
+                        erased_curves_indices.append(edge_indices[start_index])
+                        start_curve = edge_indices[start_index-1]
+                        end_curve = edge_indices[start_index+1]
                         temp = np.linspace(new_datas[start_curve], new_datas[end_curve], end_curve-start_curve+1)
                         new_datas[start_curve:end_curve+1] = temp
-                        edge_indices = np.append(edge_indices[:index],edge_indices[index+1:])
+                        edge_indices = np.append(edge_indices[:start_index],edge_indices[start_index+1:])
                         break
         
-        return [new_datas, np.array(erased_curves_indices)]
+        remain_required_consider_curves_indices = [i for i in required_consider_curve_indices if i not in erased_curves_indices]
+
+        return [new_datas, np.array(erased_curves_indices), np.array(remain_required_consider_curves_indices)]
 
     def get_intersect_point(self,a: 'list[float,float]',b:'list[float,float]',c:'list[float,float]',d:'list[float,float]') -> 'list[float, float]':
         ## https://stackoverflow.com/questions/20677795/how-do-i-compute-the-intersection-point-of-two-lines
@@ -1012,62 +1026,53 @@ class FeatureExtractor:
         return data[(data >= start) & (data <= end)]
 
 
-    def get_gradients_infos(self, data:np.ndarray, curve_indices:np.ndarray=None) -> 'dict[np.ndarray]':
+    def get_gradients_infos(self, data:np.ndarray, curve_indices:np.ndarray=None, required_consider_curve_indices:np.ndarray=None) -> 'dict[np.ndarray]':
         ## return infos about gradient on curve point and gradient ratio between a curve and its next one  
         
         if not isinstance(curve_indices, np.ndarray):
             curve_indices = self.get_curve_indices(data)
         data = np.float32(data)
 
-        distances1 = np.abs(data[curve_indices[1:]] - data[curve_indices[:-1]])
+        if isinstance(required_consider_curve_indices, np.ndarray):
+            edge_indices = np.append(curve_indices, required_consider_curve_indices)
+            edge_indices = np.unique(curve_indices)
+        else:
+            edge_indices = curve_indices
+
+        distances1 = np.abs(data[edge_indices[1:]] - data[edge_indices[:-1]])
         distances1 = np.append(distances1,0)
-        distances2 = np.abs(data[curve_indices[2:]] - data[curve_indices[1:-1]])
+        distances2 = np.abs(data[edge_indices[2:]] - data[edge_indices[1:-1]])
         distances2 = np.append(distances2, 0)
         distances2 = np.append(distances2, 0)
 
-        diffs = (data[curve_indices[1:]] - data[curve_indices[:-1]]) / (curve_indices[1:] - curve_indices[:-1]).astype(np.float32)
+        diffs = (data[edge_indices[1:]] - data[edge_indices[:-1]]) / (edge_indices[1:] - edge_indices[:-1]).astype(np.float32)
         diffs = np.append(diffs,0)
         diff_ratios = np.array([0] * len(diffs), dtype=np.float32)
 
-        bool_indices1 = ((diffs[:-1] * diffs[1:]) < 0)
-        bool_indices1 = np.append(bool_indices1, False)
-        bool_indices2 = bool_indices1[:-1]
-        bool_indices2 = np.insert(bool_indices2,False,0)
+        temp_gradients = []
+        for idx in range(len(diffs)-1):
+            current_grad = diffs[idx]
+            for i in range(idx+1,len(diffs)):
+                grad = diffs[i]
+                if grad * current_grad >= 0:
+                    temp_gradients.append(grad)
+                else:
+                    temp_gradients = np.append(temp_gradients,current_grad)
+                    ratio = abs(round(np.mean(temp_gradients)/(np.square(grad)+1e-7),3))
+                    diff_ratios[idx] = ratio
+                    temp_gradients = []
 
-        diff_ratios[bool_indices1] = np.abs(diffs[bool_indices1]) / np.square(diffs[bool_indices2])
-        # print('diff_ratios.dtype: ',diff_ratios.dtype)
+        # bool_indices1 = ((diffs[:-1] * diffs[1:]) < 0)
+        # bool_indices1 = np.append(bool_indices1, False)
+        # bool_indices2 = bool_indices1[:-1]
+        # bool_indices2 = np.insert(bool_indices2,False,0)
+        # diff_ratios[bool_indices1] = np.abs(diffs[bool_indices1]) / np.square(diffs[bool_indices2])
 
-        # diff_ratios2 = np.array([0] * len(diffs))
-        # for idx, diff in enumerate(diffs[:-1]):
-        #     next_diff = diffs[idx+1]
 
-        #     ## check direction. directions of two should be different.
-        #     if diff * next_diff >= 0:
-        #         diff_ratios2[idx] = 0
-        #     else:
-        #         diff_ratios2[idx] = abs(diff)/np.square(next_diff)
-        
-        ## both are same. below print result should be 0
-        # print('diff_ratios and diff_ratios2 different sum: ', np.sum(diff_ratios != diff_ratios2))
-    
-        ### try another way more faster
-        # for idx in range(len(diffs)-1):
-        #     diff = diffs[idx]
-        #     next_diff = diffs[idx+1]
-        #     if abs(diff) < diff1_min_limit or abs(next_diff) < diff2_min_limit:
-        #         continue
-
-        #     diff_ratio = diff_ratios[idx]
-        #     distance = abs(data[idx+1]-data[idx])
-        #     next_distance = abs(data[idx+2]-data[idx+1])
-
-        #     if diff_ratio >= diff_ratio_min_limit and diff_ratio >= diff_ratio_max_limit:
-                     
-        # return np.where(bool_indices_dystagmus==True)[0]
         return {'distances1':distances1, 'distances2':distances2, 'diffs':diffs, 'diff_ratios':diff_ratios}
 
 
-    def get_nystagmus_indices(self, data:np.ndarray, curve_indices:np.ndarray=None, info_dict:dict = None)->np.ndarray:
+    def get_nystagmus_indices(self, data:np.ndarray, curve_indices:np.ndarray=None, required_consider_curve_indices:np.ndarray=None, info_dict:dict = None)->np.ndarray:
         ## data must have no None value, only numeric.
         
         diff1_min_limit = 0.4
@@ -1077,9 +1082,17 @@ class FeatureExtractor:
         distance1_min_limit = 1
         distance2_min_limit = 1
     
-        
+        if not isinstance(curve_indices, np.ndarray):
+            curve_indices = self.get_curve_indices(data)
+
         if not isinstance(info_dict,dict):
-            info_dict = self.get_gradients_infos(data)
+            info_dict = self.get_gradients_infos(data,curve_indices,required_consider_curve_indices)
+
+        if isinstance(required_consider_curve_indices, np.ndarray):
+            edge_curve_indices = np.append(curve_indices,required_consider_curve_indices)
+            edge_curve_indices = np.unique(edge_curve_indices)
+        else:
+            edge_curve_indices = curve_indices
 
         distances1 = info_dict['distances1']
         distances2 = info_dict['distances2']
@@ -1103,10 +1116,8 @@ class FeatureExtractor:
         # print('num1 :', np.sum(bool_indices_condition1), 'num2 : ', np.sum(bool_indices_condition2), 'num3 : ', np.sum(bool_indices_condition3), 'num4 : ', np.sum(bool_indices_condition4), 'num5 : ', np.sum(bool_indices_condition5))
         # print('num_nystagmus : ', np.sum(bool_indices_nystagmus))
         
-        if not isinstance(curve_indices, np.ndarray):
-             curve_indices = self.get_curve_indices(data)
 
-        return curve_indices[bool_indices_nystagmus]
+        return edge_curve_indices[bool_indices_nystagmus]
 
     
     def get_closest_curve_indices(self, data:np.ndarray, indices:np.ndarray) -> np.ndarray:
@@ -1129,9 +1140,13 @@ class FeatureExtractor:
         # result.sort()
         return result
 
-    def make_candidate_curve_indices(self, data:np.ndarray)->np.ndarray:
+    def make_candidate_curve_indices(self, data:np.ndarray, required_consider_curve_indices:np.ndarray=None)->np.ndarray:
         curve_indices = self.get_curve_indices(data)
-        info_dict = self.get_gradients_infos(data)
+        if isinstance(required_consider_curve_indices, np.ndarray):
+            info_dict = self.get_gradients_infos(data,curve_indices)
+        else:
+            info_dict = self.get_gradients_infos(data,curve_indices,required_consider_curve_indices)
+
         nystagmus_indices1 = self.get_nystagmus_indices(data, curve_indices=curve_indices, info_dict=info_dict)
         outlier_indices1, lower_bound1, upper_bound1 = self.get_outlier_indices(data,iqr_multiplier_x10=15,partial='all',flag_curve=False)
         outlier_indices2, lower_bound2, upper_bound2 = self.get_outlier_indices(data,iqr_multiplier_x10=15,partial='upper',flag_curve=False)

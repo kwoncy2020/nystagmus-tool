@@ -386,7 +386,7 @@ class MyGuiModule(QWidget):
         
         self.inferred_info_imgs = None
         ## set inferred_info_imgs
-        self.preprocessing_inferred_info_imgs()
+        # self.preprocessing_inferred_info_imgs()  ## disabled
 
         ## parameters will be calculated by preprocessing function below
         self.init_x_list = None
@@ -399,6 +399,7 @@ class MyGuiModule(QWidget):
         self.current_selected_x_list = None
         self.current_outlier_indices = None
         self.current_candidate_curve_indices = None
+        self.required_consider_edge_curve_indices = None
         ## meaned_x_list = self.processed_x_list - self.processed_x_list.mean()
         self.meaned_x_list = None
         self.processed_y_list = None
@@ -835,6 +836,7 @@ class MyGuiModule(QWidget):
              self.cb_btn_filter_change()
         else:
             self.change_current_selected_x_list(self.processed_x_list)
+            self.required_consider_edge_curve_indices = None
             # self.update_index()
         ## self.current_upper_outlier_indices depends on the x_list( processed or filtered )
         self.cb_btn_statistics_outlier_change()
@@ -860,13 +862,13 @@ class MyGuiModule(QWidget):
         if f_thres == '': f_thres=5
 
         if flag_filter_curve2linear:
-            self.filtered_x_list, self.erased_curves_by_filter, _ = self.myfe.filter_curve2linear(self.processed_x_list,d_thres,f_thres)
+            self.filtered_x_list, self.erased_curves_by_filter, self.required_consider_edge_curve_indices = self.myfe.filter_curve2linear2(self.processed_x_list,d_thres,f_thres)
         elif flag_filter_curve2linear3:
-            self.filtered_x_list, self.erased_curves_by_filter, required_consider_edge_curve_list = self.myfe.filter_curve2linear(self.processed_x_list,d_thres,f_thres)
+            self.filtered_x_list, self.erased_curves_by_filter, self.required_consider_edge_curve_indices = self.myfe.filter_curve2linear2(self.processed_x_list,d_thres,f_thres)
             curve_indices = self.myfe.get_curve_indices(self.filtered_x_list)
-            edge_indices = np.append(curve_indices, required_consider_edge_curve_list)
+            edge_indices = np.append(curve_indices, self.required_consider_edge_curve_indices)
             edge_indices = np.unique(edge_indices)
-            self.filtered_x_list, self.erased_curves_by_filter3 = self.myfe.filter_curve2linear3(self.filtered_x_list,edge_indices)
+            self.filtered_x_list, self.erased_curves_by_filter3, self.required_consider_edge_curve_indices = self.myfe.filter_curve2linear3(self.filtered_x_list,edge_indices)
             self.erased_curves_by_filter = np.append(self.erased_curves_by_filter, self.erased_curves_by_filter3)
         
         self.change_current_selected_x_list(self.filtered_x_list)
@@ -1284,7 +1286,7 @@ class MyGuiModule(QWidget):
         # self.current_selected_x_list = x_list.copy()
         self.current_selected_x_list = x_list
         self.curve_indices = self.myfe.get_curve_indices(self.current_selected_x_list)
-        info_dict = self.myfe.get_gradients_infos(self.current_selected_x_list)
+        info_dict = self.myfe.get_gradients_infos(self.current_selected_x_list,self.curve_indices,self.required_consider_edge_curve_indices)
         self.diffs = info_dict['diffs']
         self.diff_ratios = info_dict['diff_ratios']
         self.nystagmus_indices = self.myfe.get_nystagmus_indices(self.current_selected_x_list,info_dict=info_dict)
@@ -1791,6 +1793,7 @@ class MyGuiModule(QWidget):
         ## prepare basic datas
         curve_indices = self.myfe.get_curve_indices(self.current_selected_x_list)
         curve_indices_inner_range = self.myfe.get_inner_values(curve_indices,start,end)
+
         current_selected_x_inner_datas = self.current_selected_x_list[start:end+1]
         meaned_current_selected_x_inner_datas = current_selected_x_inner_datas - current_selected_x_inner_datas.mean()
         x_processed_inner_datas = self.processed_x_list[start:end+1]
@@ -1856,8 +1859,16 @@ class MyGuiModule(QWidget):
 
         ## draw curve_indices info
         axes.scatter(curve_indices_inner_range-start, meaned_current_selected_x_inner_datas[curve_indices_inner_range-start], color='g')
-        for i in curve_indices_inner_range:
-            curve_idx = np.where(self.curve_indices == i)[0][0]
+        if isinstance(self.required_consider_edge_curve_indices, np.ndarray):
+            required_consider_edge_curve_indices_inner_range = self.myfe.get_inner_values(self.required_consider_edge_curve_indices,start,end)
+            edge_indices = self.required_consider_edge_curve_indices
+            edge_inner_indices = required_consider_edge_curve_indices_inner_range
+        else:
+            edge_indices = self.curve_indices
+            edge_inner_indices = curve_indices_inner_range
+            
+        for i in edge_inner_indices:
+            curve_idx = np.where(edge_indices == i)[0][0]
             if curve_idx > len(self.diffs)-1:
                 continue
             axes.text(i-start, meaned_current_selected_x_inner_datas[i-start], f"{self.diffs[curve_idx]:.1f}, {self.diff_ratios[curve_idx]:5.2f}", rotation=30)
@@ -1885,6 +1896,12 @@ class MyGuiModule(QWidget):
             erased_curves_by_filter_inner_range = self.myfe.get_inner_values(self.erased_curves_by_filter,start,end)
             axes.scatter(erased_curves_by_filter_inner_range-start, meaned_x_processed_datas[erased_curves_by_filter_inner_range-start], color='gray')
             
+
+        ## draw required_consider_edge_curve_indieces
+        if isinstance(self.required_consider_edge_curve_indices, np.ndarray):
+            required_consider_edge_curve_indices_inner_range = self.myfe.get_inner_values(self.required_consider_edge_curve_indices,start,end)
+            axes.scatter(required_consider_edge_curve_indices_inner_range-start, meaned_current_selected_x_inner_datas[required_consider_edge_curve_indices_inner_range-start], color='red')
+
 
         ## draw current_outliers with animate
         # if isinstance(self.current_outlier_indices, np.ndarray):

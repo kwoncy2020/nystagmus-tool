@@ -577,11 +577,12 @@ class FeatureExtractor:
             raise Exception("from get_curve_indices: input(data) should be list or np.array")
         if not isinstance(data, np.ndarray):
             data = np.array(data)
-        diff = data[1:] - data[:-1]
-        diff = np.insert(diff,0,0)
-
-        temp = np.insert(diff[1:], -1, 0)
-        diff_mul_with_next_diff = diff * temp
+            
+        diffs = data[1:] - data[:-1]
+        prev_diffs = np.insert(diffs,0,0)
+        next_diffs = np.append(prev_diffs[1:], 0)
+        diff_mul_with_next_diff = prev_diffs * next_diffs
+        
         indices_curve = np.where(diff_mul_with_next_diff < 0)[0]
         
         return indices_curve
@@ -648,65 +649,150 @@ class FeatureExtractor:
         return results
 
 
-    def connect_curves(self, data:np.ndarray, curve_indices:np.ndarray, start_curve_index:int, end_curve_index:int) -> 'list[np.ndarray, List[int]]':
-        if start_curve_index >= end_curve_index:
-            raise Exception(f"from connect_curves: end_index({end_curve_index}) is over than start_index({start_curve_index})")
-        ## start curve index and end curve index have several inner curve indices which have short distance to be deleted.
-        ## this method condiders that if inner curve is over outer curves limit or not
-        result = data.copy()
+    # def connect_curves(self, data:np.ndarray, curve_indices:np.ndarray, start_curve_number:int, end_curve_number:int) -> 'list[np.ndarray, List[int]]':
+    #     if start_curve_number >= end_curve_number:
+    #         raise Exception(f"from connect_curves: end_index({end_curve_number}) is over than start_index({start_curve_number})")
+    #     ## start curve index and end curve index have several inner curve indices which have short distance to be deleted.
+    #     ## this method condiders that if inner curve is over outer curves limit or not
+    #     result = data.copy()
 
-        start_value = data[curve_indices[start_curve_index]]
-        end_value = data[curve_indices[end_curve_index]]
+    #     start_value = data[curve_indices[start_curve_number]]
+    #     end_value = data[curve_indices[end_curve_number]]
 
-        if start_value >= end_value:
-            top = start_value
-            bottom = end_value
-        else:
-            top = end_value
-            bottom = start_value
+    #     if start_value >= end_value:
+    #         top = start_value
+    #         bottom = end_value
+    #     else:
+    #         top = end_value
+    #         bottom = start_value
 
-        remain_curves_indices = [curve_indices[start_curve_index]]
-        remain_index_list = [start_curve_index]
-        if end_curve_index > start_curve_index + 1:
-            # check inner curves value
-            if max(data[curve_indices[start_curve_index+1 : end_curve_index]]) >= top:
-                temp_argmax = np.argmax(data[curve_indices[start_curve_index+1 : end_curve_index]])
-                max_curve_index = start_curve_index+1 + temp_argmax
-                remain_curves_indices.append(curve_indices[max_curve_index])
-                remain_index_list.append(max_curve_index)
+    #     remain_curves_indices = [curve_indices[start_curve_number]]
+    #     remain_index_list = [start_curve_number]
+    #     if end_curve_number > start_curve_number + 1:
+    #         # check inner curves value
+    #         if max(data[curve_indices[start_curve_number+1 : end_curve_number]]) >= top:
+    #             temp_argmax = np.argmax(data[curve_indices[start_curve_number+1 : end_curve_number]])
+    #             max_curve_index = start_curve_number+1 + temp_argmax
+    #             remain_curves_indices.append(curve_indices[max_curve_index])
+    #             remain_index_list.append(max_curve_index)
                         
-            if min(data[curve_indices[start_curve_index+1 : end_curve_index]]) <= bottom:
-                temp_argmin = np.argmin(data[curve_indices[start_curve_index+1 : end_curve_index]])
-                min_curve_index = start_curve_index+1 + temp_argmin
-                remain_curves_indices.append(curve_indices[min_curve_index])
-                remain_index_list.append(min_curve_index)
+    #         if min(data[curve_indices[start_curve_number+1 : end_curve_number]]) <= bottom:
+    #             temp_argmin = np.argmin(data[curve_indices[start_curve_number+1 : end_curve_number]])
+    #             min_curve_index = start_curve_number+1 + temp_argmin
+    #             remain_curves_indices.append(curve_indices[min_curve_index])
+    #             remain_index_list.append(min_curve_index)
                     
-        remain_curves_indices.append(curve_indices[end_curve_index])
-        remain_curves_indices = sorted(remain_curves_indices)
-        remain_index_list = sorted(remain_index_list)
+    #     remain_curves_indices.append(curve_indices[end_curve_number])
+    #     remain_curves_indices = sorted(remain_curves_indices)
+    #     remain_index_list = sorted(remain_index_list)
 
-        for i in range(len(remain_curves_indices)-1):
-            temp = np.linspace(data[remain_curves_indices[i]],data[remain_curves_indices[i+1]],remain_curves_indices[i+1]-remain_curves_indices[i]+1)
-            result[remain_curves_indices[i]:remain_curves_indices[i+1]+1] = temp
+    #     for i in range(len(remain_curves_indices)-1):
+    #         temp = np.linspace(data[remain_curves_indices[i]],data[remain_curves_indices[i+1]],remain_curves_indices[i+1]-remain_curves_indices[i]+1)
+    #         result[remain_curves_indices[i]:remain_curves_indices[i+1]+1] = temp
         
-        return [result, remain_index_list]
+    #     return [result, remain_index_list]
 
 
-    def connect_curves2(self, data:np.ndarray, curve_indices:np.ndarray, start_end_list:'list[int, int]') -> 'list[np.ndarray, list[int]]':
-        # result = data.copy()
-        result = data
-        result_remain_curves_indices = []
+    def erase_inside_single_curve(self,data:np.ndarray, curve_indices:np.ndarray, curve_infos:'list[list[int, int, float, float]]') -> 'list[list[int],list[int]]':
+        ## this function will modify the data by inplace not copy.
+        
+        remain_curve_indices = []
+        erased_curve_indices = []
+        min_curve_number = 0
+        max_curve_number = len(curve_indices) - 1
+        
+        ## the difference (end_curve_number - start_curve_number) must be 1
+        for start_curve_number, end_curve_number, left_outer_distance, right_outer_distance in curve_infos:
+            # if start_curve_number >= end_curve_number:
+                # raise Exception(f"from connect_curves: end_index({end_curve_number}) is over than start_index({start_curve_number})")
+            ## start curve index and end curve index have several inner curve indices which have short distance to be deleted.
+            ## this method condiders that if inner curve is over outer curves limit or not
 
-        for start_curve_index, end_curve_index in start_end_list:
-            if start_curve_index >= end_curve_index:
-                raise Exception(f"from connect_curves: end_index({end_curve_index}) is over than start_index({start_curve_index})")
+            if left_outer_distance >= right_outer_distance:
+                right_outer_curve_number = min(end_curve_number + 1, max_curve_number)
+                
+                start_index = curve_indices[start_curve_number] 
+                start_value = data[start_index]
+                end_index = curve_indices[right_outer_curve_number]
+                end_value = data[end_index]
+                
+                data[start_index, end_index+1] = np.linspace(start_value, end_value, end_index-start_index+1)
+                remain_curve_indices.append(start_index)
+                erased_curve_indices.append(end_index)
+            else: 
+                left_outer_curve_number = max(start_curve_number - 1, min_curve_number)
+
+                start_index = curve_indices[left_outer_curve_number]
+                start_value = data[start_index]
+                end_index = curve_indices[end_curve_number]
+                end_value = data[end_index]
+
+                data[start_index, end_index+1] = np.linspace(start_value, end_value, end_index-start_index+1)
+                remain_curve_indices.append(end_index)
+                erased_curve_indices.append(start_index)
+            
+            
+        return [erased_curve_indices, remain_curve_indices]
+
+
+    def erase_curve_sequnce_directly(self,data:np.ndarray, curve_indices:np.ndarray, curve_infos:'list[list[int, int, float, float]]') -> 'list[list[int],list[int]]':
+        ## this function will modify the data by inplace not copy.
+        
+        remain_curve_indices = []
+        erased_curve_indices = []
+        min_curve_number = 0
+        max_curve_number = len(curve_indices) - 1
+        
+        ## the difference (end_curve_number - start_curve_number) must be over 2
+        for start_curve_number, end_curve_number, left_outer_distance, right_outer_distance in curve_infos:
+            # if start_curve_number >= end_curve_number:
+                # raise Exception(f"from connect_curves: end_index({end_curve_number}) is over than start_index({start_curve_number})")
+            ## start curve index and end curve index have several inner curve indices which have short distance to be deleted.
+            ## this method condiders that if inner curve is over outer curves limit or not
+
+            start_index = curve_indices[start_curve_number]
+            end_index = curve_indices[end_curve_number]
+            start_value = data[start_index]
+            end_value = data[end_index]
+            
+            data[start_index, end_index+1] = np.linspace(start_value, end_value, end_index-start_index+1)
+            
+            remain_curve_indices += [start_index, end_index]
+            erased_curve_indices += curve_indices[start_curve_number+1:end_curve_number-1].tolist()
+        
+        return [erased_curve_indices, remain_curve_indices]
+
+
+
+    def erase_curve_sequence_with_non_directly(self, data:np.ndarray, curve_indices:np.ndarray, curve_infos:'list[list[int, int, float, float]]', flag_inner_outer:str='inner') -> 'list[list[int],list[int]]':
+        ## this function will modify the data by inplace not copy.
+        
+        remain_curve_indices = []
+        erased_curve_indices = []
+        min_curve_number = 0
+        max_curve_number = len(curve_indices) - 1
+        
+        ## the difference (end_curve_number - start_curve_number) must be over 2
+        for start_curve_number, end_curve_number, left_outer_distance, right_outer_distance in curve_infos:
+            # if start_curve_number >= end_curve_number:
+                # raise Exception(f"from connect_curves: end_index({end_curve_number}) is over than start_index({start_curve_number})")
+            
             ## start curve index and end curve index have several inner curve indices which have short distance to be deleted.
             ## this method condiders that if inner curve is over outer curves limit or not
             
-
-            start_value = data[curve_indices[start_curve_index]]
-            end_value = data[curve_indices[end_curve_index]]
-
+            if flag_inner_outer == 'outer':
+                start_curve_number = max(start_curve_number-1, min_curve_number)
+                end_curve_number = min(end_curve_number+1, max_curve_number)
+                
+            start_index = curve_indices[start_curve_number]
+            end_index = curve_indices[end_curve_number]
+            
+            start_value = data[start_index]
+            end_value = data[end_index]
+            
+            # left_inner_index = curve_indices[start_curve_number+1]
+            # right_inner_index = curve_indices[end_curve_number-1]
+            
             if start_value >= end_value:
                 top = start_value
                 bottom = end_value
@@ -714,89 +800,68 @@ class FeatureExtractor:
                 top = end_value
                 bottom = start_value
 
-            remain_curves_indices = [curve_indices[start_curve_index],curve_indices[end_curve_index]]
-            # remain_index_list = [start_curve_index]
-            if end_curve_index > start_curve_index + 1:
-                # check inner curves value
-                if max(data[curve_indices[start_curve_index+1 : end_curve_index]]) >= top:
-                    temp_argmax = np.argmax(data[curve_indices[start_curve_index+1 : end_curve_index]])
-                    max_curve_index = start_curve_index+1 + temp_argmax
-                    remain_curves_indices.append(curve_indices[max_curve_index])
-                    # remain_index_list.append(max_curve_index)
-                    result_remain_curves_indices.append(curve_indices[max_curve_index])
-                            
-                if min(data[curve_indices[start_curve_index+1 : end_curve_index]]) <= bottom:
-                    temp_argmin = np.argmin(data[curve_indices[start_curve_index+1 : end_curve_index]])
-                    min_curve_index = start_curve_index+1 + temp_argmin
-                    remain_curves_indices.append(curve_indices[min_curve_index])
-                    # remain_index_list.append(min_curve_index)
-                    result_remain_curves_indices.append(curve_indices[min_curve_index])
+            inner_curves = curve_indices[start_curve_number+1:end_curve_number]
+            erased_curve_indices.append(inner_curves)
+            
+            if max(data[inner_curves]) >= top:
+                temp_argmax = np.argmax(data[inner_curves])
+                max_curve_index = start_curve_number+1 + temp_argmax
+                remain_curve_indices.append(curve_indices[max_curve_index])
+                erased_curve_indices.remove(curve_indices[max_curve_index])
                         
-            # remain_curves_indices.append(curve_indices[end_curve_index])
-            remain_curves_indices = sorted(remain_curves_indices)
-            # remain_index_list = sorted(remain_index_list)
+            if min(data[inner_curves]) <= bottom:
+                temp_argmin = np.argmin(data[inner_curves])
+                min_curve_index = start_curve_number+1 + temp_argmin
+                remain_curve_indices.append(curve_indices[min_curve_index])
+                erased_curve_indices.append(curve_indices[min_curve_index])
+      
 
-            for i in range(len(remain_curves_indices)-1):
-                temp = np.linspace(data[remain_curves_indices[i]],data[remain_curves_indices[i+1]],remain_curves_indices[i+1]-remain_curves_indices[i]+1)
-                result[remain_curves_indices[i]:remain_curves_indices[i+1]+1] = temp
+            for i in range(len(remain_curve_indices)-1):
+                temp = np.linspace(data[remain_curve_indices[i]],data[remain_curve_indices[i+1]],remain_curve_indices[i+1]-remain_curve_indices[i]+1)
+                data[remain_curve_indices[i]:remain_curve_indices[i+1]+1] = temp
             
-        return [result, result_remain_curves_indices]
+        return [erased_curve_indices, remain_curve_indices]
 
 
+    ## below function not successful. needed more implementation
+    # def connect_curves_with_new_point(self, data:np.ndarray, curve_indices:np.ndarray, start_end_list:'list[int, int]')->'list[np.ndarray, list[int]]':
+    #     ## start curve index and end curve index have several inner curve indices which have short distance to be deleted.
+    #     ## this method will make new curve point as well as save outer curve's gradients
+    #     # result = data.copy()
+    #     result=data
 
-    def connect_curves_with_new_point(self, data:np.ndarray, curve_indices:np.ndarray, start_end_list:'list[int, int]')->'list[np.ndarray, list[int]]':
-        ## start curve index and end curve index have several inner curve indices which have short distance to be deleted.
-        ## this method will make new curve point as well as save outer curve's gradients
-        # result = data.copy()
-        result=data
-
-        new_point_index = []
-        for start_curve_index, end_curve_index in start_end_list:
-            if start_curve_index >= end_curve_index:
-                raise Exception(f"from connect_curves_with_new_point: end_index({end_curve_index}) is over than start_index({start_curve_index})")
+    #     new_point_index = []
+    #     for start_curve_number, end_curve_number in start_end_list:
+    #         if start_curve_number >= end_curve_number:
+    #             raise Exception(f"from connect_curves_with_new_point: end_index({end_curve_number}) is over than start_index({start_curve_number})")
             
-            x1 = curve_indices[start_curve_index]
-            y1 = data[x1]
-            x2 = curve_indices[start_curve_index+1]
-            y2 = data[x2]
-            x3 = curve_indices[end_curve_index-1]
-            y3 = data[x3]
-            x4 = curve_indices[end_curve_index]
-            y4 = data[x4]
+    #         x1 = curve_indices[start_curve_number]
+    #         y1 = data[x1]
+    #         x2 = curve_indices[start_curve_number+1]
+    #         y2 = data[x2]
+    #         x3 = curve_indices[end_curve_number-1]
+    #         y3 = data[x3]
+    #         x4 = curve_indices[end_curve_number]
+    #         y4 = data[x4]
 
-            intersect_point = self.get_intersect_point([x1,y1],[x2,y2],[x3,y3],[x4,y4])
-            if intersect_point == None:
-                continue
+    #         intersect_point = self.get_intersect_point([x1,y1],[x2,y2],[x3,y3],[x4,y4])
+    #         if intersect_point == None:
+    #             continue
             
-            new_x, new_y = intersect_point
-            new_x = int(new_x)
-            new_point_index.append(new_x)
+    #         new_x, new_y = intersect_point
+    #         new_x = int(new_x)
+    #         new_point_index.append(new_x)
 
-            temp1 = np.linspace(y1,new_y, new_x-x1+1)
-            temp2 = np.linspace(new_y,y4, x4-new_x+1)
-            result[x1:new_x+1] = temp1
-            result[new_x:x4+1] = temp2
+    #         temp1 = np.linspace(y1,new_y, new_x-x1+1)
+    #         temp2 = np.linspace(new_y,y4, x4-new_x+1)
+    #         result[x1:new_x+1] = temp1
+    #         result[new_x:x4+1] = temp2
         
-        return [result, new_point_index]
+    #     return [result, new_point_index]
 
 
-    def connect_curves_direct(self, data:np.ndarray, curve_indices:np.ndarray, start_end_list:'list[int, int]')->np.ndarray:
-        # result = data.copy()
-        result = data
 
-        for start_curve_index, end_curve_index in start_end_list:
-            if start_curve_index >= end_curve_index:
-                raise Exception(f"from connect_curves_direct: end_index({end_curve_index}) is over than start_index({start_curve_index})")
-
-            start_x = curve_indices[start_curve_index]
-            end_x = curve_indices[end_curve_index]    
-            result[start_x:end_x+1] = np.linspace(data[start_x],data[end_x], end_x-start_x+1)
-
-        return result
-
-
-    def filter_curve2linear(self, data:Union[np.ndarray,list], value_distance_thres:float=2.0, frames_thres:int=5) -> 'list[np.ndarray, np.ndarray, np.ndarray]':
-        # input(data) should be derived from low_pass_filter
+    def filter_curve2linear(self, data:Union[np.ndarray,list], curve_indices:np.ndarray=None, value_distance_thres:float=2.0, frames_thres:int=5) -> 'list[np.ndarray, np.ndarray, np.ndarray]':
         # thres is the threshold distance between two of connected curve
         # frame_distance_thres is the threshold for the horizontal wave to make flat
 
@@ -807,70 +872,84 @@ class FeatureExtractor:
 
         result = data.copy()
         # it is expected that curve_indices should be sorted
-        curve_indices = self.get_curve_indices(data)
+        if not isinstance(curve_indices, np.ndarray):
+            curve_indices = self.get_curve_indices(data)
 
-        
         values = data[curve_indices]
-        distances = abs(values[1:] - values[:-1])
-        erase_distance_index_list = np.where(distances < value_distance_thres)[0]
-
-        erase_distance_grouped_index_list = self.get_grouped_sequence(erase_distance_index_list)
+        diffs = values[1:] - values[:-1]
+        frame_diffs = curve_indices[1:] - curve_indices[:-1]
         
-        erase_distance_grouped_index_list_2 = erase_distance_grouped_index_list[:]
-        for idx, item in enumerate(erase_distance_grouped_index_list):
+        norm1_distances = abs(diffs) + frame_diffs
+        consider_needed = np.where(abs(diffs) < value_distance_thres)[0]
+        # make sequence grouped. ex) [1,2,3,6,7,9,12,15,16,17] ==> [[1,3],[6,7],[9],[12],[15,17]]
+        consider_needed_grouped = self.get_grouped_sequence(consider_needed)
+        
+        consider_needed_grouped_2 = consider_needed_grouped[:]
+        for idx, item in enumerate(consider_needed_grouped):
             last_value = item[-1]
             first_value = item[0]
             if len(item) == 1:
-                erase_distance_grouped_index_list_2[idx] = [last_value, last_value+1]
+                consider_needed_grouped_2[idx] = [last_value, last_value+1]
             else:
-                erase_distance_grouped_index_list_2[idx] = [first_value, last_value+1]
-
+                consider_needed_grouped_2[idx] = [first_value, last_value+1]
+        
+        ## erase_needed_infos == [[start_index_of_curve_indices, end_index_of_curve_indices, left_outer_distance, right_outer_distance],...]
+        consider_needed_infos = []
+        for consider_needed_start, consider_needed_end in consider_needed_grouped_2:
+            if consider_needed_start == 0:
+                consider_needed_infos.append([consider_needed_start, consider_needed_end, 0, norm1_distances[consider_needed_end]])
+            else:
+                consider_needed_infos.append([consider_needed_start, consider_needed_end, norm1_distances[consider_needed_start-1], norm1_distances[consider_needed_end]])
+        
+   
         erased_curve_index_list = []
+        remain_curve_index_list = []
         ## required_consider_edge_curve is needed when have second filtering with curve2linear3
         required_consider_edge_curve_list = []
-        for grouped_index in erase_distance_grouped_index_list_2:
-            erase_distance_index_start, erase_distance_index_end = grouped_index
+        for consider_infos in consider_needed_infos:
+            consider_start, consider_end, left_outer_distance, right_outer_distance = consider_infos
             ## not good result when it comes to outside of the tip, just skip
-            if erase_distance_index_start <= 0:
-                # erase_distance_index_start = 0
+            if consider_start <= 0:
                 continue
-            if erase_distance_index_end >= len(curve_indices)-1:
-                # erase_distance_index_end = len(curve_indices)-1
+            if consider_end >= len(curve_indices)-1:
                 continue
-            
-            if (erase_distance_index_end - erase_distance_index_start) == 1:
-                self.connect_curves2(result,curve_indices,[[erase_distance_index_start-1, erase_distance_index_end+1]])
-                erased_curve_index_list.append(erase_distance_index_start)
-                erased_curve_index_list.append(erase_distance_index_end)
+
+            ## if single curve, call the self.erase_inside_single_curve().
+            if (consider_start - consider_end) == 1:
+                temp_erased_curve_list, temp_remain_curve_list = self.erase_inside_single_curve(result, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]])
+                
+                erased_curve_index_list += temp_erased_curve_list
+                remain_curve_index_list += temp_remain_curve_list
                 # pass
             else:
+                ## if not single curve. it requires to consider frame_distance through the curve sequence. 
                 ## check if the frame_distance is over thres
-                frames = (curve_indices[erase_distance_index_end] - curve_indices[erase_distance_index_start])
+                start_index = curve_indices[consider_start]
+                end_index = curve_indices[consider_end]
+                frames = (end_index - start_index)
+                
                 if frames > frames_thres:
-                    required_consider_edge_curve_list.append(erase_distance_index_start)
-                    required_consider_edge_curve_list.append(erase_distance_index_end)
+                    ## the frame gap is over the thres. so each edge of curve sequnce will be remain
                     
-                    self.connect_curves2(result,curve_indices,[[erase_distance_index_start, erase_distance_index_end]])
-                    for i in range(erase_distance_index_start,erase_distance_index_end+1):
-                        erased_curve_index_list.append(i)
-                    # pass
+                    temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]])
+                    erased_curve_index_list += temp_erased_curve_list
+                    remain_curve_index_list += temp_remain_curve_list
+                    
                 else: ## continueous curves are less than thres
-                    # self.connect_curves_with_new_point(result,curve_indices,[[erase_distance_index_start-1,erase_distance_index_end+1]])
-                    # self.connect_curves_direct(result,curve_indices,[[erase_distance_index_start-1, erase_distance_index_end+1]])
-                    self.connect_curves2(result,curve_indices,[[erase_distance_index_start-1, erase_distance_index_end+1]])
-                    for i in range(erase_distance_index_start,erase_distance_index_end+1):
-                        erased_curve_index_list.append(i)
-                    # pass
+                    required_consider_edge_curve_list += [start_index, end_index]
+                    temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]])
+                    erased_curve_index_list += temp_erased_curve_list
+                    remain_curve_index_list += temp_remain_curve_list
 
 
         erased_curve_index_list = np.array(erased_curve_index_list)
         # required_consider_edge_curve_list = np.array(required_consider_edge_curve_list)
         # return [result, curve_indices[erased_curve_index_list], curve_indices[required_consider_edge_curve_list]]
+        raise NotImplementedError() ## need to consider required_edge_curve_indices
+        
         required_consider_edge_curve_indices = [i for i in curve_indices if i not in erased_curve_index_list]
         return [result, curve_indices[erased_curve_index_list], np.array(required_consider_edge_curve_indices)]
         
-        # return [result, curve_indices[erase_distance_index_list]]
-        # return [result, curve_indices[np.unique(erase_distance_grouped_index_list_2)]]
 
 
     def filter_curve2linear2(self, data:Union[list,np.ndarray], thres:int=2, frames_thres:int=15) -> 'list[np.ndarray, np.ndarray, np.ndarray]':
@@ -911,7 +990,7 @@ class FeatureExtractor:
 
         connect_new_point_list = []
         connect_direct_list = []
-        connect_curves2_list = []
+        erase_curve_sequence_with_non_directly_list = []
         for grouped_index in erase_distance_grouped_indices:
             erase_distance_index_start, erase_distance_index_end = grouped_index
             if erase_distance_index_start < 0:
@@ -923,7 +1002,7 @@ class FeatureExtractor:
             ## check if the frame_distance is over thres
             frames = (curve_indices[erase_distance_index_end-1] - curve_indices[erase_distance_index_start+1])
             if frames > frames_thres:
-                connect_curves2_list.append([erase_distance_index_start+1,erase_distance_index_end-1])
+                erase_curve_sequence_with_non_directly_list.append([erase_distance_index_start+1,erase_distance_index_end-1])
                 for i in range(erase_distance_index_start+2,erase_distance_index_end-1):
                     erased_curve_indices.append(i)
             else:
@@ -945,7 +1024,7 @@ class FeatureExtractor:
                         erased_curve_indices.append(i)
 
             ## modify the curves
-            self.connect_curves2(result, curve_indices, connect_curves2_list)
+            self.erase_curve_sequence_with_non_directly(result, curve_indices, erase_curve_sequence_with_non_directly_list)
             self.connect_curves_with_new_point(result, curve_indices, connect_new_point_list)
             self.connect_curves_direct(result, curve_indices, connect_direct_list)
 
@@ -1005,6 +1084,7 @@ class FeatureExtractor:
 
         return [new_datas, np.array(erased_curves_indices), np.array(remain_required_consider_curves_indices)]
 
+
     def get_intersect_point(self,a: 'list[float,float]',b:'list[float,float]',c:'list[float,float]',d:'list[float,float]') -> 'list[float, float]':
         ## https://stackoverflow.com/questions/20677795/how-do-i-compute-the-intersection-point-of-two-lines
         ## Gabriel Eng : Using formula from: https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
@@ -1044,19 +1124,22 @@ class FeatureExtractor:
 
         if isinstance(required_consider_curve_indices, np.ndarray):
             edge_indices = np.append(curve_indices, required_consider_curve_indices)
-            edge_indices = np.unique(curve_indices)
+            edge_indices = np.unique(edge_indices)
         else:
             edge_indices = curve_indices
+        
+        diffs = data[edge_indices[1:]] - data[edge_indices[:-1]]
+        # diffs2 = data[edge_indices[2:]] - data[edge_indices[1:-1]]
+        
+        distances = np.abs(diffs)
+        distances = np.append(distances,0)
+        # distances2 = np.abs(diffs2)
+        # distances2 = np.append(distances2, 0)
+        # distances2 = np.append(distances2, 0)
 
-        distances1 = np.abs(data[edge_indices[1:]] - data[edge_indices[:-1]])
-        distances1 = np.append(distances1,0)
-        distances2 = np.abs(data[edge_indices[2:]] - data[edge_indices[1:-1]])
-        distances2 = np.append(distances2, 0)
-        distances2 = np.append(distances2, 0)
-
-        diffs = (data[edge_indices[1:]] - data[edge_indices[:-1]]) / (edge_indices[1:] - edge_indices[:-1]).astype(np.float32)
-        diffs = np.append(diffs,0)
-        diff_ratios = np.array([0] * len(diffs), dtype=np.float32)
+        grads = (diffs) / (edge_indices[1:] - edge_indices[:-1]).astype(np.float32)
+        grads = np.append(grads,0)
+        grad_ratios = np.array([0] * len(grads), dtype=np.float32)
 
         temp_gradients = []
         for idx in range(len(diffs)-1):
@@ -1210,3 +1293,11 @@ class FeatureExtractor:
         result.sort()
 
         return result
+
+
+if __name__ == '__main__':
+    fe = FeatureExtractor()
+    a = fe.get_grouped_sequence([0,5,7,8,9,10,15,17,18,22,24,25,26])
+    print(a)
+    
+    np.linalg.norm()

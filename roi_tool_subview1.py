@@ -5,6 +5,23 @@ import numpy as np
 from my_feature_extractor import FeatureExtractor
 import matplotlib.pyplot as plt 
 import matplotlib.animation
+from typing import Union
+
+class MyObserve:
+    def __init__(self,value):
+        self.value = value
+        self._connect_functions=[]
+        
+    def connect(self, func):
+        self._connect_functions.append(func)
+    
+    def set(self, new_value):
+        if isinstance(new_value, list) or isinstance(new_value,tuple) or isinstance(new_value,np.ndarray):
+            new_value = new_value.copy()
+        self.value = new_value
+        for func in self._connect_functions:
+            func(self.value)
+
 
 class SubGui1(QWidget):
 # class SubGui1(QMainWindow):
@@ -386,32 +403,53 @@ class MyGuiModule(QWidget):
         
         self.inferred_info_imgs = None
         ## set inferred_info_imgs
-        # self.preprocessing_inferred_info_imgs()  ## disabled
+        # self.get_base_arrays_imgs()  ## disabled
 
         ## parameters will be calculated by preprocessing function below
-        self.init_x_list = None
-        self.init_y_list = None
-        self.roundness_catched_x_list = None
-        self.outlier_catched_x_list = None
-        self.merged_none_indices = None
-        self.processed_x_list = None
-        self.filtered_x_list = None
-        self.current_selected_x_list = None
-        self.current_outlier_indices = None
-        self.current_candidate_curve_indices = None
-        self.required_consider_edge_curve_indices = None
-        ## meaned_x_list = self.processed_x_list - self.processed_x_list.mean()
-        self.meaned_x_list = None
-        self.processed_y_list = None
-        self.meaned_y_list = None
-        self.x_none_indices = None
-        self.curve_indices = None
-        self.erased_curves_by_filter = None
+        ## x, y means the value of the circle's center position.
+        self.init_x_list = None      # x series of the initial sequence before processing which is including None value.
+        self.init_y_list = None      # y series of the initial sequence before processing which is including None value.
+        self.roundness_catched_x_list = None    # x series by filtering with the roundness in the d_inferred_info
+        self.outlier_catched_x_list = None      # x series by filtering with the outlier of the self.base_x_arr  (self.base_x_arr == processing(self.init_x_list)  , which has no None value after processing.)
+        self.x_none_indices:np.ndarray = None   # indices of none value of the self.init_x_list
+        self.merged_none_indices:np.ndarray = None # indices merged by each None value indices of the two of self.init_x_list, self.init_y_list
+        self.base_x_arr:np.ndarray = None      # x series after processing which has no None value. None values should be filled with numeric value.
+        self.base_y_arr:np.ndarray = None      # non used
+        self.meaned_base_x_arr:np.ndarray = None     # meaned_base_x_arr = self.base_x_arr - self.base_x_arr.mean()
+        self.meaned_base_y_arr:np.ndarray = None     # non used
+        
+        
+        ## members for displaying particular points
+        self.current_selected_x_arr:MyObserve = MyObserve(None) # x series currently selected by user's input
+        
+        self.filtered1_x_arr:np.ndarray = None   # x series modified by filter 
+        self.erased_by_filter1_curve_indices = None
+        self.required_consider1_curve_indices = None
+        
+        self.filtered2_x_arr:np.ndarray = None   # x series modified by filter 
+        self.erased_by_filter2_curve_indices = None
+        self.required_consider2_curve_indices = None
+        
+        self.current_outlier_indices = None    # outlier indices of currently selected x arr
+        self.current_candidate_curve_indices = None # candidate indices of currently selected x arr
+        self.required_consider_edge_curve_indices = None 
+        self.current_curve_indices = None           # indices of the points.   point => (previous gradient sign x posterior gradient sign == -1)
+         
         self.nystagmus_indices = None
         self.current_final_nystagmus_indices = None
         self.diffs = None
         self.diff_ratios = None
-        self.preprocessing_inferred_info(self.d_inferred_info)
+        
+        
+        ## set members
+        self.base_x_arr, self.base_y_arr = self.get_base_arrays(self.d_inferred_info)
+        self.current_selected_x_arr.connect(self.func_current_selected_x_arr_changed)
+        self.current_selected_x_arr.set(self.base_x_arr)
+        self.meaned_base_x_arr = self.base_x_arr - self.base_x_arr.mean()
+        
+        raise NotImplementedError() ## consider below
+        self.filtered1_x_arr, self.erased_curves_by_filter, _ = self.myfe.filter_curve2linear(self.base_x_arr)
+        
         
         self.FLAG_PLT_SHOW = False
         self.PLT_SHOW_HEIGHT = 400
@@ -835,7 +873,10 @@ class MyGuiModule(QWidget):
         if self.gbox_filter.isChecked():
              self.cb_btn_filter_change()
         else:
-            self.change_current_selected_x_list(self.processed_x_list)
+            self.func_current_selected_x_arr_changed(self.base_x_arr)
+            
+            ## reset points
+            self.erased_curves_by_filter = None
             self.required_consider_edge_curve_indices = None
             # self.update_index()
         ## self.current_upper_outlier_indices depends on the x_list( processed or filtered )
@@ -862,16 +903,19 @@ class MyGuiModule(QWidget):
         if f_thres == '': f_thres=5
 
         if flag_filter_curve2linear:
-            self.filtered_x_list, self.erased_curves_by_filter, self.required_consider_edge_curve_indices = self.myfe.filter_curve2linear2(self.processed_x_list,d_thres,f_thres)
+            # self.filtered1_x_arr:np.array, self.erased_curves_by_filter, self.required_consider_edge_curve_indices = self.myfe.filter_curve2linear2(self.base_x_arr,d_thres,f_thres)
+            self.filtered1_x_arr, self.erased_curves_by_filter = self.myfe.filter_curve2linear2(self.base_x_arr,d_thres,f_thres)
+            self.required_consider_edge_curve_indices = None
         elif flag_filter_curve2linear3:
-            self.filtered_x_list, self.erased_curves_by_filter, self.required_consider_edge_curve_indices = self.myfe.filter_curve2linear2(self.processed_x_list,d_thres,f_thres)
-            curve_indices = self.myfe.get_curve_indices(self.filtered_x_list)
+            self.filtered1_x_arr, self.erased_curves_by_filter, self.required_consider_edge_curve_indices = self.myfe.filter_curve2linear(self.base_x_arr,d_thres,f_thres)
+            curve_indices = self.myfe.get_curve_indices(self.filtered1_x_arr)
             edge_indices = np.append(curve_indices, self.required_consider_edge_curve_indices)
             edge_indices = np.unique(edge_indices)
-            self.filtered_x_list, self.erased_curves_by_filter3, self.required_consider_edge_curve_indices = self.myfe.filter_curve2linear3(self.filtered_x_list,edge_indices)
+            self.filtered1_x_arr, self.erased_curves_by_filter3, self.required_consider_edge_curve_indices = self.myfe.filter_curve2linear3(self.filtered1_x_arr,edge_indices)
             self.erased_curves_by_filter = np.append(self.erased_curves_by_filter, self.erased_curves_by_filter3)
-        
-        self.change_current_selected_x_list(self.filtered_x_list)
+
+
+        self.current_selected_x_arr.set(self.filtered1_x_arr)
         self.update_index()
 
     def cb_btn_filter_erased_prev(self):
@@ -946,13 +990,13 @@ class MyGuiModule(QWidget):
         upper_bound=None
 
         # if bool_radio1 and bool_radio2:
-            # self.current_upper_outlier_indices, lower_bound, upper_bound = self.myfe.get_outlier_indices(self.current_selected_x_list,iqr_multiplier_x10=iqr,partial='upper',flag_curve=True)
+            # self.current_upper_outlier_indices, lower_bound, upper_bound = self.myfe.get_outlier_indices(self.current_selected_x_arr,iqr_multiplier_x10=iqr,partial='upper',flag_curve=True)
         if bool_radio1:
-            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_outlier_indices(self.current_selected_x_list,iqr_multiplier_x10=iqr,partial='all',flag_curve=False)
+            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_outlier_indices(self.current_selected_x_arr,iqr_multiplier_x10=iqr,partial='all',flag_curve=False)
         elif bool_radio2:
-            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_outlier_indices(self.current_selected_x_list,iqr_multiplier_x10=iqr,partial='upper',flag_curve=False)
+            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_outlier_indices(self.current_selected_x_arr,iqr_multiplier_x10=iqr,partial='upper',flag_curve=False)
         elif bool_radio3:
-            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_outlier_indices(self.current_selected_x_list,iqr_multiplier_x10=iqr,partial='upper',flag_curve=True)
+            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_outlier_indices(self.current_selected_x_arr,iqr_multiplier_x10=iqr,partial='upper',flag_curve=True)
         elif bool_radio4:
             self.current_outlier_indices = None
             lower_bound = None
@@ -990,7 +1034,7 @@ class MyGuiModule(QWidget):
 
     def cb_btn_show_plt(self):
         ## to plt.show(), its range is depends on the display range
-        if not isinstance(self.current_selected_x_list, np.ndarray): return
+        if not isinstance(self.current_selected_x_arr, np.ndarray): return
         
         width = self.get_ledit_value(self.ledit_show_plt_width)
         height = self.get_ledit_value(self.ledit_show_plt_height)
@@ -1280,18 +1324,16 @@ class MyGuiModule(QWidget):
         self.set_display_canvas1()
         self.set_display_info_lbl()
     
-    def change_current_selected_x_list(self, x_list:np.ndarray=None):
-        if not isinstance(x_list, np.ndarray):
+    def func_current_selected_x_arr_changed(self, x_arr:np.ndarray):
+        if not isinstance(x_arr, np.ndarray):
             return
-        # self.current_selected_x_list = x_list.copy()
-        self.current_selected_x_list = x_list
-        self.curve_indices = self.myfe.get_curve_indices(self.current_selected_x_list)
-        info_dict = self.myfe.get_gradients_infos(self.current_selected_x_list,self.curve_indices,self.required_consider_edge_curve_indices)
+        self.current_curve_indices = self.myfe.get_curve_indices(x_arr)
+        info_dict = self.myfe.get_gradients_infos(x_arr,self.current_curve_indices,self.required_consider_edge_curve_indices)
         self.diffs = info_dict['diffs']
         self.diff_ratios = info_dict['diff_ratios']
-        self.nystagmus_indices = self.myfe.get_nystagmus_indices(self.current_selected_x_list,info_dict=info_dict)
-        self.current_candidate_curve_indices = self.myfe.make_candidate_curve_indices(self.current_selected_x_list)
-        self.current_final_nystagmus_indices = self.myfe.get_final_nystagmus_indices(self.current_selected_x_list,self.current_candidate_curve_indices)
+        self.nystagmus_indices = self.myfe.get_nystagmus_indices(x_arr,info_dict=info_dict)
+        self.current_candidate_curve_indices = self.myfe.make_candidate_curve_indices(x_arr)
+        self.current_final_nystagmus_indices = self.myfe.get_final_nystagmus_indices(x_arr,self.current_candidate_curve_indices)
         
 
     def set_display_index_parameter(self) -> bool:
@@ -1317,7 +1359,7 @@ class MyGuiModule(QWidget):
         return is_refreshed
 
     def update_display(self):
-        if not isinstance(self.current_selected_x_list, np.ndarray): 
+        if not isinstance(self.current_selected_x_arr, np.ndarray): 
             self.npimg_current_display = self.no_display_img
             return
         if not isinstance(self.npimg_base_display,np.ndarray): return
@@ -1363,7 +1405,7 @@ class MyGuiModule(QWidget):
         self.set_lbl_img(self.plt_show_palette.lbl_main_palette1,self.plt_img)
 
     def set_display_info_lbl(self):
-        if not isinstance(self.current_selected_x_list,np.ndarray):
+        if not isinstance(self.current_selected_x_arr,np.ndarray):
             return
         if self.init_x_list[self.current_index] == None:
             data = 'None'
@@ -1373,7 +1415,7 @@ class MyGuiModule(QWidget):
         r_catched = True if self.current_index in self.roundness_catched_x_list else False    
         out_catched = True if self.current_index in self.outlier_catched_x_list else False
         merged = True if self.current_index in self.merged_none_indices else False
-        text = f'data({data:5}), merged_none({merged:5}), processed({self.processed_x_list[self.current_index]:5.1f}), r_catched({r_catched:5}), out_catched({out_catched:5})'
+        text = f'data({data:5}), merged_none({merged:5}), processed({self.base_x_arr[self.current_index]:5.1f}), r_catched({r_catched:5}), out_catched({out_catched:5})'
         self.lbl_display_info.setText(text)
 
     def get_ledit_value(self,ledit_widget):
@@ -1552,7 +1594,7 @@ class MyGuiModule(QWidget):
         # return super(QWidget,self).eventFilter(a0, a1)
 
 
-    def preprocessing_inferred_info(self, d_inferred_info:dict) -> None:
+    def get_base_arrays(self, d_inferred_info:dict) -> 'list[np.ndarray, np.ndarray]':
         if not isinstance(d_inferred_info,dict):
             return
 
@@ -1561,7 +1603,7 @@ class MyGuiModule(QWidget):
         self.init_y_list = y_points[:]
         roundnesses = d_inferred_info['roundnesses']
 
-        self.x_none_indices = [index for index, item in enumerate(x_points) if item == None]
+        self.x_none_indices = np.array([index for index, item in enumerate(x_points) if item == None])
         
         x_points = self.myfe.fill_na(list(x_points), 'tip')
         y_points = self.myfe.fill_na(list(y_points), 'tip')
@@ -1576,43 +1618,16 @@ class MyGuiModule(QWidget):
 
         x_points, merged_none_x_indices = self.myfe.merge_none(x_points, y_points)
         self.merged_none_indices = merged_none_x_indices
-        y_points, merged_none_y_indices = self.myfe.merge_none(y_points, x_points)
+        # y_points, merged_none_y_indices = self.myfe.merge_none(y_points, x_points)
 
         x_points = self.myfe.fill_na(x_points, 'all')
         y_points = self.myfe.fill_na(y_points, 'all')
 
-        np_x_points = np.array(x_points)
-        np_y_points = np.array(y_points)
-
-        self.processed_x_list = np_x_points
-        self.current_selected_x_list = self.processed_x_list
-        self.processed_y_list = np_y_points
-
-        self.filtered_x_list, self.erased_curves_by_filter, _ = self.myfe.filter_curve2linear(self.processed_x_list)
-
-        # np_x_points_modified = np_x_points - np_x_points.mean()
-        # np_y_points_modified = np_y_points - np_y_points.mean()
-        # self.meaned_x_list = np_x_points_modified
-        # self.meaned_y_list = np_y_points_modified
-
-        ##### set indices
-        # self.curve_indices = self.myfe.get_curve_indices(self.processed_x_list)
-
-        # info_dict = self.myfe.get_nystagmus_infos(self.processed_x_list)
         
-        # self.diffs = info_dict['diffs']
-        # self.diff_ratios = info_dict['diff_ratios']
-        # # print('diff_ratios:', self.diff_ratios)
-
-        # self.nystagmus_indices = self.myfe.get_nystagmus_indices(self.processed_x_list,info_dict=info_dict)
-
-        # self.current_candidate_curve_indices = self.myfe.make_candidate_curve_indices(self.processed_x_list)
-        # self.current_final_nystagmus_indices = self.myfe.get_final_nystagmus_indices(self.processed_x_list,self.current_candidate_curve_indices)
-        #####
-        self.change_current_selected_x_list(self.current_selected_x_list)
+        return [np.array(x_points), np.array(y_points)]
 
 
-    def preprocessing_inferred_info_imgs(self):
+    def get_base_arrays_imgs(self):
         if not isinstance(self.rgb_npimgs, (list,tuple)):
             return
         frame_length = len(self.rgb_npimgs)
@@ -1628,11 +1643,11 @@ class MyGuiModule(QWidget):
             heights = self.d_inferred_info['heights']
             radians = self.d_inferred_info['radians']
         except Exception as e :
-            QMessageBox.information(None,'QMessageBox', f'from preprocessing_inferred_info_imgs: Exception {e}')
+            QMessageBox.information(None,'QMessageBox', f'from get_base_arrays_imgs: Exception {e}')
             return
 
         if len(centers) != frame_length:
-            QMessageBox.information(None, 'QMEssageBox', f'from preprocessing_inferred_info_imgs: the number of frames({frame_length}) and inferred_infos({len(centers)}) are not same length')
+            QMessageBox.information(None, 'QMEssageBox', f'from get_base_arrays_imgs: the number of frames({frame_length}) and inferred_infos({len(centers)}) are not same length')
             return
 
         h,w,c = self.rgb_npimgs[0].shape
@@ -1677,7 +1692,7 @@ class MyGuiModule(QWidget):
 
 
     def make_display_img(self, start:int=0, end:int=None) -> np.ndarray:
-        if not isinstance(self.current_selected_x_list,np.ndarray):
+        if not isinstance(self.current_selected_x_arr,np.ndarray):
             return
 
         if start == None:
@@ -1685,13 +1700,13 @@ class MyGuiModule(QWidget):
         if start >= self.maximum_index:
             return
         if end == None:
-            end = len(self.current_selected_x_list)
+            end = len(self.current_selected_x_arr)
         if end <= start:
             end = start + 100
         if end > self.maximum_index:
             end = self.maximum_index
 
-        x_datas = self.current_selected_x_list[start:end+1]
+        x_datas = self.current_selected_x_arr[start:end+1]
         max_x = max(x_datas)
         min_x = min(x_datas)
         width = len(x_datas)
@@ -1777,27 +1792,27 @@ class MyGuiModule(QWidget):
             # print(2)
             return
         
-        if not isinstance(self.current_selected_x_list,np.ndarray):
-            raise Exception("from make_plot: self.current_selected_x_list is no np.ndarray")
+        if not isinstance(self.current_selected_x_arr,np.ndarray):
+            raise Exception("from make_plot: self.current_selected_x_arr is no np.ndarray")
         if start == None:
             start = 0
         if start >= self.maximum_index:
             return
         if end == None:
-            end = len(self.current_selected_x_list)
+            end = len(self.current_selected_x_arr)
         if end <= start:
             end = start + 100
         if end > self.maximum_index:
             end = self.maximum_index
         
         ## prepare basic datas
-        curve_indices = self.myfe.get_curve_indices(self.current_selected_x_list)
+        curve_indices = self.myfe.get_curve_indices(self.current_selected_x_arr)
         curve_indices_inner_range = self.myfe.get_inner_values(curve_indices,start,end)
 
-        current_selected_x_inner_datas = self.current_selected_x_list[start:end+1]
+        current_selected_x_inner_datas = self.current_selected_x_arr[start:end+1]
         meaned_current_selected_x_inner_datas = current_selected_x_inner_datas - current_selected_x_inner_datas.mean()
-        x_processed_inner_datas = self.processed_x_list[start:end+1]
-        meaned_x_processed_datas = x_processed_inner_datas - x_processed_inner_datas.mean()
+        x_processed_inner_datas = self.base_x_arr[start:end+1]
+        meaned_x_processed_inner_datas = x_processed_inner_datas - x_processed_inner_datas.mean()
         max_y = max(meaned_current_selected_x_inner_datas)
         min_y = min(meaned_current_selected_x_inner_datas)
         y_ticks = np.linspace(min_y,max_y,5)
@@ -1888,13 +1903,13 @@ class MyGuiModule(QWidget):
         ## draw erased_curves_by_filter with animate
         # if isinstance(self.erased_curves_by_filter, np.ndarray):
         #     erased_curves_by_filter_inner_range = self.myfe.get_inner_values(self.erased_curves_by_filter,start,end)
-        #     ani_scat_erased = axes.scatter(erased_curves_by_filter_inner_range-start, meaned_x_processed_datas[erased_curves_by_filter_inner_range-start], color='gray', animated=True)
+        #     ani_scat_erased = axes.scatter(erased_curves_by_filter_inner_range-start, meaned_x_processed_inner_datas[erased_curves_by_filter_inner_range-start], color='gray', animated=True)
         #     axes.draw_artist(ani_scat_erased)
 
         ## draw erased_curves_by_filter
         if isinstance(self.erased_curves_by_filter, np.ndarray):
             erased_curves_by_filter_inner_range = self.myfe.get_inner_values(self.erased_curves_by_filter,start,end)
-            axes.scatter(erased_curves_by_filter_inner_range-start, meaned_x_processed_datas[erased_curves_by_filter_inner_range-start], color='gray')
+            axes.scatter(erased_curves_by_filter_inner_range-start, meaned_x_processed_inner_datas[erased_curves_by_filter_inner_range-start], color='gray')
             
 
         ## draw required_consider_edge_curve_indieces
@@ -1964,7 +1979,7 @@ class MyGuiModule(QWidget):
             
 
         # else: # if plt_display == true, make black_and_white img for displaying
-        #     x_datas = np.rint(self.current_selected_x_list[start:end])
+        #     x_datas = np.rint(self.current_selected_x_arr[start:end])
         #     max_x = max(x_datas)
         #     min_x = min(x_datas)
         #     width = len(x_datas)

@@ -328,50 +328,29 @@ class FeatureExtractor:
         
         return list_
 
-    def get_outlier_indices(self, data:np.ndarray, iqr_multiplier_x10:float=1.5, partial:str='all',flag_curve:bool=False) ->'list[np.ndarray, list[float,float]]':
+
+    def get_outlier_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict, iqr_multiplier_x10:float=1.5, partial:str='all', flag_curve:str=True) ->'list[np.ndarray, list[float,float]]':
         if not isinstance(data, np.ndarray):
             raise Exception("from get_outlier: the input must be a instance of np.ndarray")
         iqr_multiplier_x10 = iqr_multiplier_x10 / 10.
-        if flag_curve == True:
-            curve_indices = self.get_curve_indices(data)
-            y_curves = data[curve_indices]
-            gradients = abs(y_curves[1:] - y_curves[:-1]) / (abs(curve_indices[1:]-curve_indices[:-1])+1e-6)
-            arr = gradients
-        else:
-            if partial == 'all':
-                arr = data[1:]-data[:-1]
-            else:
-                arr = abs(data[1:]-data[:-1])
-            
+
+        grads = info_dict['grads']
         
-        q1, q3 = np.percentile(arr,[25,75])
+        if flag_curve == False:
+            grads = data[1:]-data[:-1]
+            edge_indices = list(range(len(grads)))
+            
+        if partial != 'all':
+            grads = abs(grads)
+        
+        q1, q3 = np.percentile(grads,[25,75])
         iqr = q3-q1
         upper_bound = q3 + (iqr * iqr_multiplier_x10)
         lower_bound = q1 - (iqr * iqr_multiplier_x10)
 
-        upper_bound_indices = np.where(arr > upper_bound)[0]
-        lower_bound_indices = np.where(arr < lower_bound)[0]
+        bool_bound_condition = (grads > upper_bound) & (grads < lower_bound)
         
-        if partial == 'all':
-            if flag_curve == True:
-                concat = np.concatenate([lower_bound_indices, upper_bound_indices],axis=0)
-                result = curve_indices[np.sort(concat)]
-            else:
-                concat = np.concatenate([lower_bound_indices, upper_bound_indices],axis=0)
-                result = np.sort(concat)
-
-        elif partial == 'upper':
-            if flag_curve == True:
-                result = curve_indices[upper_bound_indices]
-            else:
-                result = upper_bound_indices
-        elif partial == 'lower':
-            if flag_curve == True:
-                result = curve_indices[lower_bound_indices]
-            else:
-                result = lower_bound_indices
-        
-        return [result, lower_bound, upper_bound]
+        return [edge_indices[bool_bound_condition], lower_bound, upper_bound]
 
 
     
@@ -758,7 +737,7 @@ class FeatureExtractor:
             data[start_index, end_index+1] = np.linspace(start_value, end_value, end_index-start_index+1)
             
             remain_curve_indices += [start_index, end_index]
-            erased_curve_indices += curve_indices[start_curve_number+1:end_curve_number-1].tolist()
+            erased_curve_indices += curve_indices[start_curve_number+1:end_curve_number].tolist()
         
         return [erased_curve_indices, remain_curve_indices]
 
@@ -766,9 +745,9 @@ class FeatureExtractor:
 
     def erase_curve_sequence_with_non_directly(self, data:np.ndarray, curve_indices:np.ndarray, curve_infos:'list[list[int, int, float, float]]', flag_inner_outer:str='inner') -> 'list[list[int],list[int]]':
         ## this function will modify the data by inplace not copy.
+        total_remain_curve_indices = []
+        total_erased_curve_indices = []
         
-        remain_curve_indices = []
-        erased_curve_indices = []
         min_curve_number = 0
         max_curve_number = len(curve_indices) - 1
         
@@ -799,28 +778,34 @@ class FeatureExtractor:
             else:
                 top = end_value
                 bottom = start_value
-
-            inner_curves = curve_indices[start_curve_number+1:end_curve_number]
-            erased_curve_indices.append(inner_curves)
+                
+            remain_curve_indices = [curve_indices[start_curve_number]]     ## fill first curve to prepare calibration
+            inner_curves = curve_indices[start_curve_number+1:end_curve_number]  
+            total_erased_curve_indices.append(inner_curves)
             
-            if max(data[inner_curves]) >= top:
+            if max(data[inner_curves]) >= top:                             ## to find most upper curve over the top value in the inner_curves
                 temp_argmax = np.argmax(data[inner_curves])
                 max_curve_index = start_curve_number+1 + temp_argmax
                 remain_curve_indices.append(curve_indices[max_curve_index])
-                erased_curve_indices.remove(curve_indices[max_curve_index])
+                total_remain_curve_indices.append(curve_indices[max_curve_index])
+                total_erased_curve_indices.remove(curve_indices[max_curve_index])
                         
-            if min(data[inner_curves]) <= bottom:
+            if min(data[inner_curves]) <= bottom:                          ## to find most below curve over the bottom value in the inner_curves
                 temp_argmin = np.argmin(data[inner_curves])
                 min_curve_index = start_curve_number+1 + temp_argmin
                 remain_curve_indices.append(curve_indices[min_curve_index])
-                erased_curve_indices.append(curve_indices[min_curve_index])
+                total_remain_curve_indices.append(curve_indices[min_curve_index])
+                total_erased_curve_indices.remove(curve_indices[min_curve_index])
       
-
-            for i in range(len(remain_curve_indices)-1):
-                temp = np.linspace(data[remain_curve_indices[i]],data[remain_curve_indices[i+1]],remain_curve_indices[i+1]-remain_curve_indices[i]+1)
-                data[remain_curve_indices[i]:remain_curve_indices[i+1]+1] = temp
+            remain_curve_indices.append(curve_indices[end_curve_number])    ## fill last curve to prepare calibration
             
-        return [erased_curve_indices, remain_curve_indices]
+            for i in range(len(remain_curve_indices)-1):                    ## calibration with remain_curves
+                start_idx = remain_curve_indices[i]
+                end_idx = remain_curve_indices[i+1]
+                temp = np.linspace(data[start_idx],data[end_idx], end_idx-start_idx+1)
+                data[start_idx:end_idx+1] = temp
+            
+        return [total_erased_curve_indices, total_remain_curve_indices]
 
 
     ## below function not successful. needed more implementation
@@ -870,7 +855,7 @@ class FeatureExtractor:
         if not isinstance(data, np.ndarray):
             data = np.array(data)
 
-        result = data.copy()
+        result_data = data.copy()
         # it is expected that curve_indices should be sorted
         if not isinstance(curve_indices, np.ndarray):
             curve_indices = self.get_curve_indices(data)
@@ -903,7 +888,7 @@ class FeatureExtractor:
         
    
         erased_curve_index_list = []
-        remain_curve_index_list = []
+        # remain_curve_index_list = []
         ## required_consider_edge_curve is needed when have second filtering with curve2linear3
         required_consider_edge_curve_list = []
         for consider_infos in consider_needed_infos:
@@ -916,11 +901,11 @@ class FeatureExtractor:
 
             ## if single curve, call the self.erase_inside_single_curve().
             if (consider_start - consider_end) == 1:
-                temp_erased_curve_list, temp_remain_curve_list = self.erase_inside_single_curve(result, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]])
+                temp_erased_curve_list, temp_remain_curve_list = self.erase_inside_single_curve(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]])
                 
                 erased_curve_index_list += temp_erased_curve_list
-                remain_curve_index_list += temp_remain_curve_list
-                # pass
+                # remain_curve_index_list += temp_remain_curve_list
+                
             else:
                 ## if not single curve. it requires to consider frame_distance through the curve sequence. 
                 ## check if the frame_distance is over thres
@@ -931,24 +916,23 @@ class FeatureExtractor:
                 if frames > frames_thres:
                     ## the frame gap is over the thres. so each edge of curve sequnce will be remain
                     
-                    temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]])
+                    temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]],flag_inner_outer='inner')
                     erased_curve_index_list += temp_erased_curve_list
-                    remain_curve_index_list += temp_remain_curve_list
+                    # remain_curve_index_list += temp_remain_curve_list
                     
                 else: ## continueous curves are less than thres
                     required_consider_edge_curve_list += [start_index, end_index]
-                    temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]])
+                    temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]],flag_inner_outer='outer')
                     erased_curve_index_list += temp_erased_curve_list
-                    remain_curve_index_list += temp_remain_curve_list
+                    # remain_curve_index_list += temp_remain_curve_list
 
 
-        erased_curve_index_list = np.array(erased_curve_index_list)
+        erased_curve_indices = np.array(erased_curve_index_list)
         # required_consider_edge_curve_list = np.array(required_consider_edge_curve_list)
         # return [result, curve_indices[erased_curve_index_list], curve_indices[required_consider_edge_curve_list]]
-        raise NotImplementedError() ## need to consider required_edge_curve_indices
         
-        required_consider_edge_curve_indices = [i for i in curve_indices if i not in erased_curve_index_list]
-        return [result, curve_indices[erased_curve_index_list], np.array(required_consider_edge_curve_indices)]
+        remain_curve_indices = [i for i in curve_indices if i not in erased_curve_index_list]
+        return [result_data, erased_curve_indices, np.array(remain_curve_indices)]
         
 
 
@@ -1115,184 +1099,95 @@ class FeatureExtractor:
         return data[(data >= start) & (data <= end)]
 
 
-    def get_gradients_infos(self, data:np.ndarray, curve_indices:np.ndarray=None, required_consider_curve_indices:np.ndarray=None) -> 'dict[np.ndarray]':
+    def get_gradients_infos(self, data:np.ndarray, edge_indices:np.ndarray) -> 'dict[np.ndarray]':
         ## return infos about gradient on curve point and gradient ratio between a curve and its next one  
-        
-        if not isinstance(curve_indices, np.ndarray):
-            curve_indices = self.get_curve_indices(data)
-        data = np.float32(data)
 
-        if isinstance(required_consider_curve_indices, np.ndarray):
-            edge_indices = np.append(curve_indices, required_consider_curve_indices)
-            edge_indices = np.unique(edge_indices)
-        else:
-            edge_indices = curve_indices
-        
-        diffs = data[edge_indices[1:]] - data[edge_indices[:-1]]
+        y_diffs = data[edge_indices[1:]] - data[edge_indices[:-1]]
         # diffs2 = data[edge_indices[2:]] - data[edge_indices[1:-1]]
-        
-        distances = np.abs(diffs)
-        distances = np.append(distances,0)
-        # distances2 = np.abs(diffs2)
-        # distances2 = np.append(distances2, 0)
-        # distances2 = np.append(distances2, 0)
+        x_diffs = edge_indices[1:]-edge_indices[:-1]
+        # distances1 = np.sqrt(np.square(y_diffs) + np.square(x_diffs))
+        distances1 = np.linalg.norm([y_diffs,x_diffs])
+        distances1 = np.append(distances1,0)
+        distances2 = distances1[1:]
+        distances2 = np.append(distances2, 0)
 
-        grads = (diffs) / (edge_indices[1:] - edge_indices[:-1]).astype(np.float32)
+        grads = (y_diffs) / (edge_indices[1:] - edge_indices[:-1]).astype(np.float32)
         grads = np.append(grads,0)
-        grad_ratios = np.array([0] * len(grads), dtype=np.float32)
+        abs_grads = np.abs(grads)
+        grad_ratios = abs_grads / (np.append(np.square(grads[1:]),0) + 1e-6)
 
-        temp_gradients = []
-        for idx in range(len(diffs)-1):
-            current_grad = diffs[idx]
-            for i in range(idx+1,len(diffs)):
-                grad = diffs[i]
-                if grad * current_grad >= 0:
-                    temp_gradients.append(grad)
-                else:
-                    temp_gradients = np.append(temp_gradients,current_grad)
-                    ratio = abs(round(np.mean(temp_gradients)/(np.square(grad)+1e-7),3))
-                    diff_ratios[idx] = ratio
-                    temp_gradients = []
-
-        # bool_indices1 = ((diffs[:-1] * diffs[1:]) < 0)
-        # bool_indices1 = np.append(bool_indices1, False)
-        # bool_indices2 = bool_indices1[:-1]
-        # bool_indices2 = np.insert(bool_indices2,False,0)
-        # diff_ratios[bool_indices1] = np.abs(diffs[bool_indices1]) / np.square(diffs[bool_indices2])
+        return {'distances1':distances1, 'distances2':distances2, 'y_diffs':y_diffs, 'grads':grads, 'abs_grads':abs_grads, 'grad_ratios':grad_ratios}
 
 
-        return {'distances1':distances1, 'distances2':distances2, 'diffs':diffs, 'diff_ratios':diff_ratios}
-
-
-    def get_nystagmus_indices(self, data:np.ndarray, curve_indices:np.ndarray=None, required_consider_curve_indices:np.ndarray=None, info_dict:dict = None)->np.ndarray:
+    def get_manual_nystagmus_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict = None)->np.ndarray:
         ## data must have no None value, only numeric.
         
-        diff1_min_limit = 0.4
-        diff2_min_limit = 0.05
-        diff_ratio_min_limit = 0.7
-        diff_ratio_max_limit = np.inf
-        distance1_min_limit = 1
-        distance2_min_limit = 1
-    
-        if not isinstance(curve_indices, np.ndarray):
-            curve_indices = self.get_curve_indices(data)
+        # y_diff_min_limit1 = 0.4
+        # y_diff_min_limit2 = 0.05
+        grad_ratio_min_limit = 0.7
+        grad_ratio_max_limit = np.inf
+        distance_min_limit = 0.4
+        next_distance_min_limit = 0.05
 
         if not isinstance(info_dict,dict):
-            info_dict = self.get_gradients_infos(data,curve_indices,required_consider_curve_indices)
+            info_dict = self.get_gradients_infos(data,edge_indices)
 
-        if isinstance(required_consider_curve_indices, np.ndarray):
-            edge_curve_indices = np.append(curve_indices,required_consider_curve_indices)
-            edge_curve_indices = np.unique(edge_curve_indices)
-        else:
-            edge_curve_indices = curve_indices
+        distances = info_dict['distances1']
+        next_distance = info_dict['distances2']
+        y_diffs = info_dict['y_diffs']
+        grads = info_dict['grads']
+        abs_grads = info_dict['abs_grads']
+        grad_ratios = info_dict['grad_ratios']
 
-        distances1 = info_dict['distances1']
-        distances2 = info_dict['distances2']
-        diffs = info_dict['diffs']
-        diff_ratios = info_dict['diff_ratios']
-
-        bool_indices_condition1 = (abs(diffs) >= diff1_min_limit)
-        bool_indices_condition2 = (abs(diffs[1:]) >= diff2_min_limit)
-        bool_indices_condition2 = np.append(bool_indices_condition2, False)
-        bool_indices_condition3 = (diff_ratios >= diff_ratio_min_limit) & (diff_ratios <= diff_ratio_max_limit)
-        bool_indices_condition4 = distances1 >= distance1_min_limit
-        bool_indices_condition5 = distances2 >= distance2_min_limit
+        bool_distance_condition = (distances >= distance_min_limit)
+        bool_next_distance_condition = (next_distance >= next_distance_min_limit)
+        
+        ## grad_ratio limit
+        bool_grad_ratio_condition3 = (grad_ratios >= grad_ratio_min_limit) & (grad_ratios <= grad_ratio_max_limit)
 
         ## prev gradient must bigger than next one.
-        bool_indices_condition6 = abs(diffs[:-1]) > abs(diffs[1:])
-        bool_indices_condition6 = np.append(bool_indices_condition6, False)
+        bool_additional_condition = abs_grads[:-1] > abs_grads[1:]
+        bool_additional_condition = np.append(bool_additional_condition, False)
 
-        bool_indices_nystagmus = bool_indices_condition1 & bool_indices_condition2 & bool_indices_condition3 & bool_indices_condition4 & bool_indices_condition5
-        # bool_indices_nystagmus = bool_indices_condition1 & bool_indices_condition2 & bool_indices_condition3
+        bool_manual_nystagmus_condition = bool_distance_condition & bool_next_distance_condition & bool_grad_ratio_condition3 & bool_additional_condition
 
-        # print('num1 :', np.sum(bool_indices_condition1), 'num2 : ', np.sum(bool_indices_condition2), 'num3 : ', np.sum(bool_indices_condition3), 'num4 : ', np.sum(bool_indices_condition4), 'num5 : ', np.sum(bool_indices_condition5))
-        # print('num_nystagmus : ', np.sum(bool_indices_nystagmus))
-        
-
-        return edge_curve_indices[bool_indices_nystagmus]
+        return edge_indices[bool_manual_nystagmus_condition]
 
     
-    def get_closest_curve_indices(self, data:np.ndarray, indices:np.ndarray) -> np.ndarray:
+    def get_most_left_close_curve_indices(self, data:np.ndarray, edge_indices:np.ndarray, candidate_indices:np.ndarray) -> np.ndarray:
+        ## to erase duplicate nearby index.
         ## return left closest curve indices.
-        ## ex)  curve_indices = self.get_curve_indices(data)
-        ##      curve_indices  ([0,5,10,15,20,25,30])
-        ##      indices =       [4,5,11,16,23,29,30]
-        ##      result =        [0,5,10,15,20,25,30]        
+        ##  ex) edge_indices      =       [0,5,10,15,20,25,30]
+        ##      candidate_indices =       [4,5,11,14,16,23,27,29,30]
+        ##      result            =       [0,5,10,10,15,20,25,29,30]        
         
-        curve_indices = self.get_curve_indices(data)
         result = []
-        for idx in indices:
-            left_indices = curve_indices[curve_indices<=idx]
+        for idx in candidate_indices:
+            left_indices = edge_indices[edge_indices<=idx]
             if len(left_indices) == 0:
                 continue
             closest_max = np.max(left_indices)
             result.append(closest_max)
         
         result = np.unique(result)
-        # result.sort()
+        # result.sort()  ## np.unique will sort the array.
         return result
 
-    def make_candidate_curve_indices(self, data:np.ndarray, required_consider_curve_indices:np.ndarray=None)->np.ndarray:
-        curve_indices = self.get_curve_indices(data)
-        if isinstance(required_consider_curve_indices, np.ndarray):
-            info_dict = self.get_gradients_infos(data,curve_indices)
-        else:
-            info_dict = self.get_gradients_infos(data,curve_indices,required_consider_curve_indices)
 
-        nystagmus_indices1 = self.get_nystagmus_indices(data, curve_indices=curve_indices, info_dict=info_dict)
-        outlier_indices1, lower_bound1, upper_bound1 = self.get_outlier_indices(data,iqr_multiplier_x10=15,partial='all',flag_curve=False)
-        outlier_indices2, lower_bound2, upper_bound2 = self.get_outlier_indices(data,iqr_multiplier_x10=15,partial='upper',flag_curve=False)
-        outlier_indices3, lower_bound3, upper_bound3 = self.get_outlier_indices(data,iqr_multiplier_x10=15,partial='upper',flag_curve=True)
-        concat_outlier_indices = np.concatenate([outlier_indices1, outlier_indices2, outlier_indices3, nystagmus_indices1])
-        concat_outlier_indices = np.unique(concat_outlier_indices)
-        closest_curve_indices = self.get_closest_curve_indices(data, concat_outlier_indices)
+    def get_statistical_nystagmus_indices(self, data:np.ndarray, edge_indices:np.ndarray, additional_indices:np.ndarray=None)->np.ndarray:
+        ## make additional indieces with outliers of the gradient of the data
+        
+        outlier_indices1, lower_bound1, upper_bound1 = self.get_outlier_indices(data, edge_indices, iqr_multiplier_x10=15, partial='all', flag_curve=False)
+        outlier_indices2, lower_bound2, upper_bound2 = self.get_outlier_indices(data, edge_indices, iqr_multiplier_x10=15, partial='positive', flag_curve=False)
+        outlier_indices3, lower_bound3, upper_bound3 = self.get_outlier_indices(data, edge_indices, iqr_multiplier_x10=15, partial='positive', flag_curve=True)
+        total_outlier_indices = np.concatenate([outlier_indices1, outlier_indices2, outlier_indices3, additional_indices])
+        total_outlier_indices = np.unique(total_outlier_indices)
+        closest_curve_indices = self.get_most_left_close_curve_indices(data, edge_indices, total_outlier_indices)
         
         return closest_curve_indices
 
 
-    def get_final_nystagmus_indices(self, data:np.ndarray, candidate_curve_indices:np.ndarray) -> np.ndarray:
-        result = []
-        curve_indices = self.get_curve_indices(data)
-        seek_multiplier = 4
-        gap_limit = 0.3
 
-        for idx in candidate_curve_indices[:-1]:
-            temp_loc = np.where(curve_indices==idx)[0][0]
-            next_curve_idx = curve_indices[temp_loc+1]
-
-
-            y1 = data[idx]
-            y2 = data[next_curve_idx]
-            dx = next_curve_idx - idx
-            dy = y2 - y1
-
-            top = np.max([y1, y2])
-            bottom = np.min([data[idx], data[next_curve_idx]])
-
-            # y3 = data[next_curve_idx + dx]
-            # y4 = data[next_curve_idx + dx + dx]           
-            # y5 = data[next_curve_idx + dx + dx + dx]
-
-            next_next_idx = next_curve_idx+dx*seek_multiplier
-            if next_next_idx > len(data)-1:
-                next_next_idx = len(data)-1
-                
-            if len(data[next_curve_idx:next_next_idx]) == 0:
-                    continue
-                
-            if dy >= 0:
-                
-                if np.max(data[next_curve_idx : next_next_idx]) <= top:
-                    if np.min(data[next_curve_idx : next_next_idx]) <= bottom + (dy*gap_limit):
-                        result.append(idx)
-            else:
-                if np.min(data[next_curve_idx : next_next_idx]) >= bottom:
-                    if np.max(data[next_curve_idx : next_next_idx]) >= top + (dy*gap_limit):
-                        result.append(idx)
-
-        result.sort()
-
-        return result
 
 
 if __name__ == '__main__':

@@ -145,133 +145,134 @@ class FeatureExtractor:
                 , 'right_centers': right_dict["centers"], 'right_roundnesses': right_dict["roundnesses"], 'right_widths': right_dict["widths"], 'right_heights': right_dict["heights"], 'right_radians': right_dict["radians"]}
 
             
-    ## no longer use, will be deprecated
-    def extract_indices(self,video_file_path, MODEL_NAME) -> list:
-        MODEL_HEIGHT = self.MODEL_HEIGHT
-        MODEL_WIDTH = self.MODEL_WIDTH
+    # ## no longer use, will be deprecated
+    # def extract_indices(self,video_file_path, MODEL_NAME) -> list:
+    #     MODEL_HEIGHT = self.MODEL_HEIGHT
+    #     MODEL_WIDTH = self.MODEL_WIDTH
         
-        if os.path.isfile(video_file_path):
-            cap = cv2.VideoCapture(video_file_path)
-        else:
-            print(video_file_path)
-            raise ValueError("File not found")
+    #     if os.path.isfile(video_file_path):
+    #         cap = cv2.VideoCapture(video_file_path)
+    #     else:
+    #         print(video_file_path)
+    #         raise ValueError("File not found")
         
 
-        l_left_center_axis = []
-        l_left_roundness = []
-        l_left_result_imgs = []
+    #     l_left_center_axis = []
+    #     l_left_roundness = []
+    #     l_left_result_imgs = []
 
-        l_right_center_axis = []
-        l_right_roundness = []
-        l_right_result_imgs = []
+    #     l_right_center_axis = []
+    #     l_right_roundness = []
+    #     l_right_result_imgs = []
 
-        with tf.device(CURRENT_DEVICE):
-            model = load_model(MODEL_NAME, custom_objects={'dice_score': self.dice_score})
+    #     with tf.device(CURRENT_DEVICE):
+    #         model = load_model(MODEL_NAME, custom_objects={'dice_score': self.dice_score})
             
-            index = 0
-            prev_left_x = 0
-            prev_left_y = 0
-            prev_right_x = 0
-            prev_right_y = 0
+    #         index = 0
+    #         prev_left_x = 0
+    #         prev_left_y = 0
+    #         prev_right_x = 0
+    #         prev_right_y = 0
 
-            start_time = time.time()
-            while True:
-                retval, frame = cap.read()
-                if not retval:
-                    print("model prediction has been finished")
-                    break
-                # print(retval,type(frame))
-                # print(frame.shape)
-                height = frame.shape[0]
-                width = frame.shape[1]
-                channel = frame.shape[2]
+    #         start_time = time.time()
+    #         while True:
+    #             retval, frame = cap.read()
+    #             if not retval:
+    #                 print("model prediction has been finished")
+    #                 break
+    #             # print(retval,type(frame))
+    #             # print(frame.shape)
+    #             height = frame.shape[0]
+    #             width = frame.shape[1]
+    #             channel = frame.shape[2]
                 
-                # cv2.imshow('frame',frame)
-                # cv2.waitKey(0)
-                # cv2.destroyAllWindows()
+    #             # cv2.imshow('frame',frame)
+    #             # cv2.waitKey(0)
+    #             # cv2.destroyAllWindows()
 
-                ####### Lt at right, Rt at left on frame ####### 
-                img_right = frame[:,:int(width/2),:]
-                img_left = frame[:,int(width/2):,:]
+    #             ####### Lt at right, Rt at left on frame ####### 
+    #             img_right = frame[:,:int(width/2),:]
+    #             img_left = frame[:,int(width/2):,:]
 
-                img_left_resized = cv2.resize(img_left,(MODEL_WIDTH, MODEL_HEIGHT),interpolation=cv2.INTER_LANCZOS4)
-                img_right_resized = cv2.resize(img_right,(MODEL_WIDTH, MODEL_HEIGHT),interpolation=cv2.INTER_LANCZOS4)
+    #             img_left_resized = cv2.resize(img_left,(MODEL_WIDTH, MODEL_HEIGHT),interpolation=cv2.INTER_LANCZOS4)
+    #             img_right_resized = cv2.resize(img_right,(MODEL_WIDTH, MODEL_HEIGHT),interpolation=cv2.INTER_LANCZOS4)
 
-                img_left_resized_gray = cv2.cvtColor(img_left_resized,cv2.COLOR_BGR2GRAY)
-                img_right_resized_gray = cv2.cvtColor(img_right_resized,cv2.COLOR_BGR2GRAY)
+    #             img_left_resized_gray = cv2.cvtColor(img_left_resized,cv2.COLOR_BGR2GRAY)
+    #             img_right_resized_gray = cv2.cvtColor(img_right_resized,cv2.COLOR_BGR2GRAY)
 
-                img_left_resized_gray_norm = img_left_resized_gray / 255.
-                img_right_resized_gray_norm = img_right_resized_gray / 255.
-                # print(img_left_resized_gray_norm.shape)
+    #             img_left_resized_gray_norm = img_left_resized_gray / 255.
+    #             img_right_resized_gray_norm = img_right_resized_gray / 255.
+    #             # print(img_left_resized_gray_norm.shape)
 
-                img_left_resized_gray_norm = img_left_resized_gray_norm[:,:,np.newaxis]
-                img_right_resized_gray_norm = img_right_resized_gray_norm[:,:,np.newaxis]
-                # print(img_left_resized_gray_norm.shape)
-                pred_left = model.predict(img_left_resized_gray_norm[np.newaxis,:,:,:])
-                pred_left = pred_left.squeeze()
-                pred_left = (pred_left > 0.5).astype(np.uint8)
+    #             img_left_resized_gray_norm = img_left_resized_gray_norm[:,:,np.newaxis]
+    #             img_right_resized_gray_norm = img_right_resized_gray_norm[:,:,np.newaxis]
+    #             # print(img_left_resized_gray_norm.shape)
+    #             pred_left = model.predict(img_left_resized_gray_norm[np.newaxis,:,:,:])
+    #             pred_left = pred_left.squeeze()
+    #             pred_left = (pred_left > 0.5).astype(np.uint8)
 
-                pred_right = model.predict(img_right_resized_gray_norm[np.newaxis,:,:,:])
-                pred_right = pred_right.squeeze()
-                pred_right = (pred_right > 0.5).astype(np.uint8)
+    #             pred_right = model.predict(img_right_resized_gray_norm[np.newaxis,:,:,:])
+    #             pred_right = pred_right.squeeze()
+    #             pred_right = (pred_right > 0.5).astype(np.uint8)
 
-                if self.eval_tool.get_calib_ellipse_centers2(pred_left):
-                    left_x, left_y = self.eval_tool.get_calib_ellipse_centers2(pred_left)
-                    roundness_left = self.eval_tool.get_calib_roundness2(pred_left)
-                    left_x = round(left_x,3)
-                    left_y = round(left_y,3)
-                    roundness_left = round(roundness_left,3)
-                    prev_left_x = left_x
-                    prev_left_y = left_y
-                    img_left_result = self.eval_tool.draw_pred_calib_ellipse2(img_left_resized,pred_left)
-                    img_left_result = cv2.putText(img_left_result,f'Lt, x:{left_x},y:{left_y}',(10,20),cv2.FONT_HERSHEY_COMPLEX_SMALL,1,(0,0,255))
-                else:
-                    roundness_left = 0
-                    # left_x = prev_left_x
-                    left_x = None
-                    # left_y = prev_left_y
-                    left_y = None
-                    img_left_result = img_left_resized
-                    # img_left_result = cv2.putText(img_left_result,f'Lt, x:{left_x},y:{left_y}',(10,20),cv2.FONT_HERSHEY_COMPLEX_SMALL,1,(0,255,0))
+    #             if self.eval_tool.get_calib_ellipse_centers2(pred_left):
+    #                 left_x, left_y = self.eval_tool.get_calib_ellipse_centers2(pred_left)
+    #                 roundness_left = self.eval_tool.get_calib_roundness2(pred_left)
+    #                 left_x = round(left_x,3)
+    #                 left_y = round(left_y,3)
+    #                 roundness_left = round(roundness_left,3)
+    #                 prev_left_x = left_x
+    #                 prev_left_y = left_y
+    #                 img_left_result = self.eval_tool.draw_pred_calib_ellipse2(img_left_resized,pred_left)
+    #                 img_left_result = cv2.putText(img_left_result,f'Lt, x:{left_x},y:{left_y}',(10,20),cv2.FONT_HERSHEY_COMPLEX_SMALL,1,(0,0,255))
+    #             else:
+    #                 roundness_left = 0
+    #                 # left_x = prev_left_x
+    #                 left_x = None
+    #                 # left_y = prev_left_y
+    #                 left_y = None
+    #                 img_left_result = img_left_resized
+    #                 # img_left_result = cv2.putText(img_left_result,f'Lt, x:{left_x},y:{left_y}',(10,20),cv2.FONT_HERSHEY_COMPLEX_SMALL,1,(0,255,0))
 
-                l_left_center_axis.append([left_x,left_y])
-                l_left_roundness.append(roundness_left)
-                l_left_result_imgs.append(img_left_result)
+    #             l_left_center_axis.append([left_x,left_y])
+    #             l_left_roundness.append(roundness_left)
+    #             l_left_result_imgs.append(img_left_result)
 
-                if self.eval_tool.get_calib_ellipse_centers2(pred_right):
-                    right_x, right_y = self.eval_tool.get_calib_ellipse_centers2(pred_right)
-                    roundness_right = self.eval_tool.get_calib_roundness2(pred_right)
-                    right_x = round(right_x,3)
-                    right_y = round(right_y,3)
-                    roundness_right = round(roundness_right,3)
-                    prev_right_x = right_x
-                    prev_right_y = right_y
-                    img_right_result = self.eval_tool.draw_pred_calib_ellipse2(img_right_resized,pred_right)
-                    img_right_result = cv2.putText(img_right_result,f'Rt, x:{right_x},y:{right_y}',(10,20),cv2.FONT_HERSHEY_COMPLEX_SMALL,1,(0,0,255))
-                else:
-                    roundness_right = 0
-                    # right_x = prev_right_x
-                    right_x = None
-                    # right_y = prev_right_y
-                    right_y = None
-                    img_right_result = img_right_resized
-                    # img_right_result = cv2.putText(img_right_result,f'Rt, x:{right_x},y:{right_y}',(10,20),cv2.FONT_HERSHEY_COMPLEX_SMALL,1,(0,255,0))
+    #             if self.eval_tool.get_calib_ellipse_centers2(pred_right):
+    #                 right_x, right_y = self.eval_tool.get_calib_ellipse_centers2(pred_right)
+    #                 roundness_right = self.eval_tool.get_calib_roundness2(pred_right)
+    #                 right_x = round(right_x,3)
+    #                 right_y = round(right_y,3)
+    #                 roundness_right = round(roundness_right,3)
+    #                 prev_right_x = right_x
+    #                 prev_right_y = right_y
+    #                 img_right_result = self.eval_tool.draw_pred_calib_ellipse2(img_right_resized,pred_right)
+    #                 img_right_result = cv2.putText(img_right_result,f'Rt, x:{right_x},y:{right_y}',(10,20),cv2.FONT_HERSHEY_COMPLEX_SMALL,1,(0,0,255))
+    #             else:
+    #                 roundness_right = 0
+    #                 # right_x = prev_right_x
+    #                 right_x = None
+    #                 # right_y = prev_right_y
+    #                 right_y = None
+    #                 img_right_result = img_right_resized
+    #                 # img_right_result = cv2.putText(img_right_result,f'Rt, x:{right_x},y:{right_y}',(10,20),cv2.FONT_HERSHEY_COMPLEX_SMALL,1,(0,255,0))
                 
-                l_right_center_axis.append([right_x, right_y])
-                l_right_roundness.append(roundness_right)
-                l_right_result_imgs.append(img_right_result)
+    #             l_right_center_axis.append([right_x, right_y])
+    #             l_right_roundness.append(roundness_right)
+    #             l_right_result_imgs.append(img_right_result)
                 
-                if index % 100 == 0:
-                    current_time= time.time()
-                    print('index: ', index, 'time: ', current_time-start_time)
-                index += 1
+    #             if index % 100 == 0:
+    #                 current_time= time.time()
+    #                 print('index: ', index, 'time: ', current_time-start_time)
+    #             index += 1
             
-        cap.release()
-        print("model_inference finished, it tooks ", time.time()-start_time, "sec")
-        return [l_left_center_axis,l_left_roundness,l_left_result_imgs, l_right_center_axis, l_right_roundness, l_right_result_imgs]
+    #     cap.release()
+    #     print("model_inference finished, it tooks ", time.time()-start_time, "sec")
+    #     return [l_left_center_axis,l_left_roundness,l_left_result_imgs, l_right_center_axis, l_right_roundness, l_right_result_imgs]
 
 
     def fill_na(self, list_:list, kinds:str='inner') -> list:
+        ## the input list_ should have None value.
         if not isinstance(list_, list):
             raise Exception("the input should be a instance of list")
 
@@ -329,16 +330,20 @@ class FeatureExtractor:
         return list_
 
 
-    def get_outlier_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict, iqr_multiplier_x10:float=1.5, partial:str='all', flag_curve:str=True) ->'list[np.ndarray, list[float,float]]':
+    def get_gradient_outlier_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict, iqr_multiplier_x10:float=1.5, partial:str='all', flag_edge:str=True) ->'list[np.ndarray, list[float,float]]':
+        ## the parameter named partial can be either 'all' or 'positive'.
+        ## 'positive' will make the grads to abs(grads)
+        ## flag_edge means that it will be considered with only withing the edge_indices otherwise considered with all gradient of the data  ( grads = data[1:]-data[:-1] ).
+        
         if not isinstance(data, np.ndarray):
             raise Exception("from get_outlier: the input must be a instance of np.ndarray")
         iqr_multiplier_x10 = iqr_multiplier_x10 / 10.
 
         grads = info_dict['grads']
         
-        if flag_curve == False:
+        if flag_edge == False:
             grads = data[1:]-data[:-1]
-            edge_indices = list(range(len(grads)))
+            edge_indices = np.array(list(range(len(grads))))
             
         if partial != 'all':
             grads = abs(grads)
@@ -354,9 +359,11 @@ class FeatureExtractor:
 
 
     
-    def erase_outlier(self, list_:list, iqr_multiplier:float=1.5) -> 'list[list, np.ndarray]':
+    def mask_with_difference_outlier(self, list_:list, iqr_multiplier:float=1.5) -> 'list[list, np.ndarray]':
+        ## the input list will contain several None values. so need to be consider None value.
         ## the input list_ should be filled with not none value on their tips. before call this func you must call the fill_na function with the kind of 'tip' 
         ## fill_na(list_, 'tip')
+        
         if not isinstance(list_, list):
             raise Exception("the input should be a instance of list")
         list_ = copy.deepcopy(list_)
@@ -384,6 +391,7 @@ class FeatureExtractor:
         # most_close_not_none_right_values = [0] * len(list_)
         # most_close_not_none_right_values[-1] = list_[-1]
 
+        
         temp_left_value = list_[0]
         for i in range(1,len(list_)):
             if list_[i] == None:
@@ -391,6 +399,8 @@ class FeatureExtractor:
             else:
                 most_close_not_none_left_values[i] = temp_left_value
                 temp_left_value = list_[i]
+        ## ex) list_                       = [5,None,None,10,None,25,17]
+        ## most_close_not_none_left_values = [5,   5,   5, 5,  10,10,25]
 
         # temp_right_value = list_[-1]
         # for i in range(len(list_)-1,-1,-1):
@@ -399,8 +409,6 @@ class FeatureExtractor:
         #     else:
         #         most_close_not_none_right_values[i] = temp_right_value
         #         temp_right_value = list_[i]
-
-
 
         diffs = [0] * len(list_)
         for i in range(1,len(list_)-1):
@@ -426,13 +434,14 @@ class FeatureExtractor:
         return [list_, outlier_indices]
 
 
-    def erase_outlier2(self, list_:list, iqr_multiplier:int=1.5) -> 'list[list,np.ndarray]':
-        ## erase_outlier(1) method detects outlier on their differences.
+    def mask_with_value_outlier(self, list_:list, iqr_multiplier:int=1.5) -> 'list[list,np.ndarray]':
+        ## the input list will contain several None values. so need to be consider None value.
+        ## input list contains None values and consists of positive values.
+        ## the output list_ also contain None value when it becomes the outlier.
+        
         ## it can cause some wrong result.
         ## this method detect outliers with on their values
         
-        ## input list contains None values and consists of positive values.
-
         if not isinstance(list_, list):
             raise Exception("the input should be a instance of list")
         list_ = copy.deepcopy(list_)
@@ -481,6 +490,8 @@ class FeatureExtractor:
 
 
     def mask_with_roundness(self, list_:list, roundnesses:list, r:float=0.6) -> 'list[list, np.ndarray]':
+        ## the input lists will contain several None values. so need to be consider None value.
+        ## the output list_ also contain None value when it matched with roundness_threshold.
         if not isinstance(list_,list) or not isinstance(roundnesses, list):
             raise Exception("the input should be a instance of list")
         if r < 0:
@@ -493,11 +504,11 @@ class FeatureExtractor:
         ## the roundness value is expected 0 when it comes not to be detected.
         ## it makes works more easily using by numpy 
         np_roundnesses = np.array(roundnesses)
-        indices = np.where(np_roundnesses <= r)[0]
-        for i in indices:
+        masked_indices = np.where(np_roundnesses <= r)[0]
+        for i in masked_indices:
             list_[i] = None
 
-        return list_ , indices
+        return list_ , masked_indices
 
     def spread_none_with_n_step(self,list_, n=2) -> list:
         if not isinstance(list_,list):
@@ -520,6 +531,8 @@ class FeatureExtractor:
         return list_
 
     def merge_none(self, list_1:list, list_2:list) -> 'list[list, np.ndarray]':
+        ## the input lists will contain several None values. so need to be consider None value.
+        ## the output list_ also contain None value.
         if not isinstance(list_1, list) or not isinstance(list_2, list):
             raise Exception("the input should be a instance of list")
         if len(list_1) != len(list_2):
@@ -566,32 +579,34 @@ class FeatureExtractor:
         
         return indices_curve
 
-    def get_bent_indices(self, data:Union[list,np.ndarray]) -> np.ndarray:
-        if not isinstance(data, list) and not isinstance(data, np.ndarray):
-            raise Exception("from get_bent_indices: input(data) should be list or np.array")
-        if not isinstance(data, np.ndarray):
-            data = np.array(data)
+    # ## require fix
+    # def get_bent_indices(self, data:Union[list,np.ndarray]) -> np.ndarray:
+    
+    #     if not isinstance(data, list) and not isinstance(data, np.ndarray):
+    #         raise Exception("from get_bent_indices: input(data) should be list or np.array")
+    #     if not isinstance(data, np.ndarray):
+    #         data = np.array(data)
         
-        temp_prev_index = data[0]
-        connected_index_head = None
-        FLAG_CONNECT_ON = False
-        result = []
-        for index in data[1:]:
-            if temp_prev_index + 1 == index:
-                if FLAG_CONNECT_ON == False:
-                    FLAG_CONNECT_ON = True
-                    connected_index_head = temp_prev_index
-            else:
-                if FLAG_CONNECT_ON == True:
-                    connected_index_tail = temp_prev_index
-                    result.append([connected_index_head, connected_index_tail])
-                    FLAG_CONNECT_ON = False
-                else:
-                    result.append([temp_prev_index])
+    #     temp_prev_index = data[0]
+    #     connected_index_head = None
+    #     FLAG_CONNECT_ON = False
+    #     result = []
+    #     for index in data[1:]:
+    #         if temp_prev_index + 1 == index:
+    #             if FLAG_CONNECT_ON == False:
+    #                 FLAG_CONNECT_ON = True
+    #                 connected_index_head = temp_prev_index
+    #         else:
+    #             if FLAG_CONNECT_ON == True:
+    #                 connected_index_tail = temp_prev_index
+    #                 result.append([connected_index_head, connected_index_tail])
+    #                 FLAG_CONNECT_ON = False
+    #             else:
+    #                 result.append([temp_prev_index])
 
-            temp_prev_index = index
+    #         temp_prev_index = index
 
-        return result
+    #     return result
 
 
     def get_grouped_sequence(self, data : Union[list, np.ndarray]) -> 'list[list[int]]':
@@ -695,9 +710,9 @@ class FeatureExtractor:
                 end_index = curve_indices[right_outer_curve_number]
                 end_value = data[end_index]
                 
-                data[start_index, end_index+1] = np.linspace(start_value, end_value, end_index-start_index+1)
-                remain_curve_indices.append(start_index)
-                erased_curve_indices.append(end_index)
+                data[start_index: end_index+1] = np.linspace(start_value, end_value, end_index-start_index+1)
+                remain_curve_indices.append(curve_indices[start_curve_number])
+                erased_curve_indices.append(curve_indices[end_curve_number])
             else: 
                 left_outer_curve_number = max(start_curve_number - 1, min_curve_number)
 
@@ -706,9 +721,9 @@ class FeatureExtractor:
                 end_index = curve_indices[end_curve_number]
                 end_value = data[end_index]
 
-                data[start_index, end_index+1] = np.linspace(start_value, end_value, end_index-start_index+1)
-                remain_curve_indices.append(end_index)
-                erased_curve_indices.append(start_index)
+                data[start_index: end_index+1] = np.linspace(start_value, end_value, end_index-start_index+1)
+                remain_curve_indices.append(curve_indices[end_curve_number])
+                erased_curve_indices.append(curve_indices[start_curve_number])
             
             
         return [erased_curve_indices, remain_curve_indices]
@@ -734,7 +749,7 @@ class FeatureExtractor:
             start_value = data[start_index]
             end_value = data[end_index]
             
-            data[start_index, end_index+1] = np.linspace(start_value, end_value, end_index-start_index+1)
+            data[start_index: end_index+1] = np.linspace(start_value, end_value, end_index-start_index+1)
             
             remain_curve_indices += [start_index, end_index]
             erased_curve_indices += curve_indices[start_curve_number+1:end_curve_number].tolist()
@@ -780,24 +795,28 @@ class FeatureExtractor:
                 bottom = start_value
                 
             remain_curve_indices = [curve_indices[start_curve_number]]     ## fill first curve to prepare calibration
-            inner_curves = curve_indices[start_curve_number+1:end_curve_number]  
-            total_erased_curve_indices.append(inner_curves)
+            inner_curves_indices = curve_indices[start_curve_number+1:end_curve_number]  
+            total_erased_curve_indices += inner_curves_indices.tolist()
             
-            if max(data[inner_curves]) >= top:                             ## to find most upper curve over the top value in the inner_curves
-                temp_argmax = np.argmax(data[inner_curves])
-                max_curve_index = start_curve_number+1 + temp_argmax
-                remain_curve_indices.append(curve_indices[max_curve_index])
-                total_remain_curve_indices.append(curve_indices[max_curve_index])
-                total_erased_curve_indices.remove(curve_indices[max_curve_index])
+            values = data[inner_curves_indices]
+            if max(values) >= top:                             ## to find most upper curve over the top value in the inner_curves
+                temp_argmax = np.argmax(values)
+                curve_max_index = curve_indices[start_curve_number+1 + temp_argmax]
+                remain_curve_indices.append(curve_max_index)
+                total_remain_curve_indices.append(curve_max_index)
+                # print('total:' ,total_erased_curve_indices, 'max_index:',curve_max_index, 'max_index_dtype, type:',curve_max_index.dtype, type(curve_max_index))
+                total_erased_curve_indices.remove(curve_max_index)
+                # print('total_removed:' ,total_erased_curve_indices, 'max_index:',curve_max_index, 'max_index_dtype, type:',curve_max_index.dtype, type(curve_max_index))
                         
-            if min(data[inner_curves]) <= bottom:                          ## to find most below curve over the bottom value in the inner_curves
-                temp_argmin = np.argmin(data[inner_curves])
+            if min(values) <= bottom:                          ## to find most below curve over the bottom value in the inner_curves
+                temp_argmin = np.argmin(values)
                 min_curve_index = start_curve_number+1 + temp_argmin
                 remain_curve_indices.append(curve_indices[min_curve_index])
                 total_remain_curve_indices.append(curve_indices[min_curve_index])
                 total_erased_curve_indices.remove(curve_indices[min_curve_index])
       
             remain_curve_indices.append(curve_indices[end_curve_number])    ## fill last curve to prepare calibration
+            remain_curve_indices = sorted(remain_curve_indices)
             
             for i in range(len(remain_curve_indices)-1):                    ## calibration with remain_curves
                 start_idx = remain_curve_indices[i]
@@ -846,7 +865,7 @@ class FeatureExtractor:
 
 
 
-    def filter_curve2linear(self, data:Union[np.ndarray,list], curve_indices:np.ndarray=None, value_distance_thres:float=2.0, frames_thres:int=5) -> 'list[np.ndarray, np.ndarray, np.ndarray]':
+    def filter_modify_base_curve(self, data:Union[np.ndarray,list], curve_indices:np.ndarray=None, value_distance_thres:float=2.0, frames_thres:int=5) -> 'list[np.ndarray, np.ndarray, np.ndarray]':
         # thres is the threshold distance between two of connected curve
         # frame_distance_thres is the threshold for the horizontal wave to make flat
 
@@ -865,7 +884,8 @@ class FeatureExtractor:
         frame_diffs = curve_indices[1:] - curve_indices[:-1]
         
         norm1_distances = abs(diffs) + frame_diffs
-        consider_needed = np.where(abs(diffs) < value_distance_thres)[0]
+        raise NotImplementedError()
+        consider_needed = np.where(abs(diffs[:-1]) < value_distance_thres)[0]   ## diffs[:-1] ==> because of the below process (consider_needed_grouped_2[idx] = [first_value, last_value+1]) last_value+1 means last_index+1 so it has over limit the array's index
         # make sequence grouped. ex) [1,2,3,6,7,9,12,15,16,17] ==> [[1,3],[6,7],[9],[12],[15,17]]
         consider_needed_grouped = self.get_grouped_sequence(consider_needed)
         
@@ -900,7 +920,7 @@ class FeatureExtractor:
                 continue
 
             ## if single curve, call the self.erase_inside_single_curve().
-            if (consider_start - consider_end) == 1:
+            if (consider_end - consider_start) == 1:
                 temp_erased_curve_list, temp_remain_curve_list = self.erase_inside_single_curve(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]])
                 
                 erased_curve_index_list += temp_erased_curve_list
@@ -911,9 +931,10 @@ class FeatureExtractor:
                 ## check if the frame_distance is over thres
                 start_index = curve_indices[consider_start]
                 end_index = curve_indices[consider_end]
-                frames = (end_index - start_index)
+                frame_diff = (end_index - start_index)
+
                 
-                if frames > frames_thres:
+                if frame_diff < frames_thres:
                     ## the frame gap is over the thres. so each edge of curve sequnce will be remain
                     
                     temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]],flag_inner_outer='inner')
@@ -921,7 +942,7 @@ class FeatureExtractor:
                     # remain_curve_index_list += temp_remain_curve_list
                     
                 else: ## continueous curves are less than thres
-                    required_consider_edge_curve_list += [start_index, end_index]
+                    # required_consider_edge_curve_list += [start_index, end_index]
                     temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]],flag_inner_outer='outer')
                     erased_curve_index_list += temp_erased_curve_list
                     # remain_curve_index_list += temp_remain_curve_list
@@ -935,138 +956,139 @@ class FeatureExtractor:
         return [result_data, erased_curve_indices, np.array(remain_curve_indices)]
         
 
+    # ## require fix
+    # def filter_modify_base_curve2(self, data:Union[list,np.ndarray], thres:int=2, frames_thres:int=15) -> 'list[np.ndarray, np.ndarray, np.ndarray]':
+    #     # input(data) should be derived from low_pass_filter
+    #     # thres is the threshold distance between two of connected curve
+    #     # frame_distance_thres is the threshold for the horizontal wave to make flat
 
-    def filter_curve2linear2(self, data:Union[list,np.ndarray], thres:int=2, frames_thres:int=15) -> 'list[np.ndarray, np.ndarray, np.ndarray]':
-        # input(data) should be derived from low_pass_filter
-        # thres is the threshold distance between two of connected curve
-        # frame_distance_thres is the threshold for the horizontal wave to make flat
+    #     if not isinstance(data, list) and not isinstance(data, np.ndarray):
+    #         raise Exception("from get_inner_range: input(data) should be list or np.array")
+    #     if not isinstance(data, np.ndarray):
+    #         data = np.array(data)
 
-        if not isinstance(data, list) and not isinstance(data, np.ndarray):
-            raise Exception("from get_inner_range: input(data) should be list or np.array")
-        if not isinstance(data, np.ndarray):
-            data = np.array(data)
-
-        result = data.copy()
-        # it is expected that curve_indices should be sorted
-        curve_indices = self.get_curve_indices(data)
+    #     result = data.copy()
+    #     # it is expected that curve_indices should be sorted
+    #     curve_indices = self.get_curve_indices(data)
 
         
-        values = data[curve_indices]
-        distances = abs(values[1:] - values[:-1])
-        erase_distance_indices = np.where(distances < thres)[0]
+    #     values = data[curve_indices]
+    #     distances = abs(values[1:] - values[:-1])
+    #     erase_distance_indices = np.where(distances < thres)[0]
 
-        erase_distance_grouped_indices = self.get_grouped_sequence(erase_distance_indices)
-        for i in erase_distance_grouped_indices:
-            last_value = i[-1]
-            first_value = i[0]
-            if len(i) == 1:
-                i.remove(last_value)
-                i.append(first_value-1)
-                i.append(last_value+2)
-            else:
-                i.remove(first_value)
-                i.append(first_value-1)
-                i.remove(last_value)
-                i.append(last_value+2)
+    #     erase_distance_grouped_indices = self.get_grouped_sequence(erase_distance_indices)
+    #     for i in erase_distance_grouped_indices:
+    #         last_value = i[-1]
+    #         first_value = i[0]
+    #         if len(i) == 1:
+    #             i.remove(last_value)
+    #             i.append(first_value-1)
+    #             i.append(last_value+2)
+    #         else:
+    #             i.remove(first_value)
+    #             i.append(first_value-1)
+    #             i.remove(last_value)
+    #             i.append(last_value+2)
 
 
-        erased_curve_indices = []
+    #     erased_curve_indices = []
 
-        connect_new_point_list = []
-        connect_direct_list = []
-        erase_curve_sequence_with_non_directly_list = []
-        for grouped_index in erase_distance_grouped_indices:
-            erase_distance_index_start, erase_distance_index_end = grouped_index
-            if erase_distance_index_start < 0:
-                erase_distance_index_start = 0
-            if erase_distance_index_end > len(curve_indices)-1:
-                erase_distance_index_end = len(curve_indices)-1
+    #     connect_new_point_list = []
+    #     connect_direct_list = []
+    #     erase_curve_sequence_with_non_directly_list = []
+    #     for grouped_index in erase_distance_grouped_indices:
+    #         erase_distance_index_start, erase_distance_index_end = grouped_index
+    #         if erase_distance_index_start < 0:
+    #             erase_distance_index_start = 0
+    #         if erase_distance_index_end > len(curve_indices)-1:
+    #             erase_distance_index_end = len(curve_indices)-1
             
             
-            ## check if the frame_distance is over thres
-            frames = (curve_indices[erase_distance_index_end-1] - curve_indices[erase_distance_index_start+1])
-            if frames > frames_thres:
-                erase_curve_sequence_with_non_directly_list.append([erase_distance_index_start+1,erase_distance_index_end-1])
-                for i in range(erase_distance_index_start+2,erase_distance_index_end-1):
-                    erased_curve_indices.append(i)
-            else:
-                top = data[curve_indices[erase_distance_index_start]]
-                bottom = data[curve_indices[erase_distance_index_end]]
+    #         ## check if the frame_distance is over thres
+    #         frames = (curve_indices[erase_distance_index_end-1] - curve_indices[erase_distance_index_start+1])
+    #         if frames > frames_thres:
+    #             erase_curve_sequence_with_non_directly_list.append([erase_distance_index_start+1,erase_distance_index_end-1])
+    #             for i in range(erase_distance_index_start+2,erase_distance_index_end-1):
+    #                 erased_curve_indices.append(i)
+    #         else:
+    #             top = data[curve_indices[erase_distance_index_start]]
+    #             bottom = data[curve_indices[erase_distance_index_end]]
 
-                FLAG_ALL_INNER_RANGE = True
-                for i in range(erase_distance_index_start+1,erase_distance_index_end):
-                    if top < data[curve_indices[i]] or bottom > data[curve_indices[i]]:
-                        connect_new_point_list.append([erase_distance_index_start, erase_distance_index_end])
-                        FLAG_ALL_INNER_RANGE = False
-                        break
-                if FLAG_ALL_INNER_RANGE == False:
-                    for i in range(erase_distance_index_start+1,erase_distance_index_end):
-                        erased_curve_indices.append(i)
-                else:
-                    connect_direct_list.append([erase_distance_index_start, erase_distance_index_end])
-                    for i in range(erase_distance_index_start+1,erase_distance_index_end):
-                        erased_curve_indices.append(i)
+    #             FLAG_ALL_INNER_RANGE = True
+    #             for i in range(erase_distance_index_start+1,erase_distance_index_end):
+    #                 if top < data[curve_indices[i]] or bottom > data[curve_indices[i]]:
+    #                     connect_new_point_list.append([erase_distance_index_start, erase_distance_index_end])
+    #                     FLAG_ALL_INNER_RANGE = False
+    #                     break
+    #             if FLAG_ALL_INNER_RANGE == False:
+    #                 for i in range(erase_distance_index_start+1,erase_distance_index_end):
+    #                     erased_curve_indices.append(i)
+    #             else:
+    #                 connect_direct_list.append([erase_distance_index_start, erase_distance_index_end])
+    #                 for i in range(erase_distance_index_start+1,erase_distance_index_end):
+    #                     erased_curve_indices.append(i)
 
-            ## modify the curves
-            self.erase_curve_sequence_with_non_directly(result, curve_indices, erase_curve_sequence_with_non_directly_list)
-            self.connect_curves_with_new_point(result, curve_indices, connect_new_point_list)
-            self.connect_curves_direct(result, curve_indices, connect_direct_list)
+    #         ## modify the curves
+    #         self.erase_curve_sequence_with_non_directly(result, curve_indices, erase_curve_sequence_with_non_directly_list)
+    #         self.connect_curves_with_new_point(result, curve_indices, connect_new_point_list)
+    #         self.connect_curves_direct(result, curve_indices, connect_direct_list)
 
-        erased_curve_indices = np.array(erased_curve_indices)
+    #     erased_curve_indices = np.array(erased_curve_indices)
         
-        return [result, erased_curve_indices]
+    #     return [result, erased_curve_indices]
     
 
-    def filter_curve2linear3(self, data:Union[np.ndarray,list], required_consider_curve_indices:np.ndarray, value_distance_thres:float=1.0, frame_distance_thres:int=5) -> 'list[np.ndarray, np.ndarray]':
-        ## this filter do easy mechanism to erase curve within value_distance_thres
-        ## this function should come after using filter_curve2linear since this function will use consider edge curve indices
-        if not isinstance(data, list) and not isinstance(data, np.ndarray):
-            raise Exception("from get_inner_range: input(data) should be list or np.array")
-        if not isinstance(data, np.ndarray):
-            data = np.array(data)
+    # ## require fix
+    # def filter_curve2linear3(self, data:Union[np.ndarray,list], required_consider_curve_indices:np.ndarray, value_distance_thres:float=1.0, frame_distance_thres:int=5) -> 'list[np.ndarray, np.ndarray]':
+    #     ## this filter do easy mechanism to erase curve within value_distance_thres
+    #     ## this function should come after using filter_modify_base_curve since this function will use consider edge curve indices
+    #     if not isinstance(data, list) and not isinstance(data, np.ndarray):
+    #         raise Exception("from get_inner_range: input(data) should be list or np.array")
+    #     if not isinstance(data, np.ndarray):
+    #         data = np.array(data)
 
-        new_datas = data.copy()
-        edge_indices = required_consider_curve_indices.copy()
-        erased_curves_indices = []
+    #     new_datas = data.copy()
+    #     edge_indices = required_consider_curve_indices.copy()
+    #     erased_curves_indices = []
         
-        flag_no_erased_curve = True
-        while True:
-            if flag_no_erased_curve == False:
-                break
+    #     flag_no_erased_curve = True
+    #     while True:
+    #         if flag_no_erased_curve == False:
+    #             break
             
-            values = data[edge_indices]
-            value_distances = abs(values[1:]-values[:-1])
-            value_distances = np.insert(value_distances, 0, 0)
-            frame_distances = abs(edge_indices[1:]-edge_indices[:-1])
-            frame_distances = np.insert(frame_distances, 0, 0)
-            diffs = value_distances / (frame_distances + 1e-7)
-            flag_no_erased_curve = False    
+    #         values = data[edge_indices]
+    #         value_distances = abs(values[1:]-values[:-1])
+    #         value_distances = np.insert(value_distances, 0, 0)
+    #         frame_distances = abs(edge_indices[1:]-edge_indices[:-1])
+    #         frame_distances = np.insert(frame_distances, 0, 0)
+    #         diffs = value_distances / (frame_distances + 1e-7)
+    #         flag_no_erased_curve = False    
             
-            for index in range(2,len(value_distances)-1):
-                if value_distances[index] < value_distance_thres:
-                    if frame_distances[index] < frame_distance_thres:
-                        flag_no_erased_curve = True
+    #         for index in range(2,len(value_distances)-1):
+    #             if value_distances[index] < value_distance_thres:
+    #                 if frame_distances[index] < frame_distance_thres:
+    #                     flag_no_erased_curve = True
                         
-                        prev_diff = diffs[index-1]
-                        curr_diff = diffs[index]
-                        next_diff = diffs[index+1]
+    #                     prev_diff = diffs[index-1]
+    #                     curr_diff = diffs[index]
+    #                     next_diff = diffs[index+1]
 
-                        if next_diff < prev_diff:
-                            start_index = index
-                        else:
-                            start_index = index -1
+    #                     if next_diff < prev_diff:
+    #                         start_index = index
+    #                     else:
+    #                         start_index = index -1
 
-                        erased_curves_indices.append(edge_indices[start_index])
-                        start_curve = edge_indices[start_index-1]
-                        end_curve = edge_indices[start_index+1]
-                        temp = np.linspace(new_datas[start_curve], new_datas[end_curve], end_curve-start_curve+1)
-                        new_datas[start_curve:end_curve+1] = temp
-                        edge_indices = np.append(edge_indices[:start_index],edge_indices[start_index+1:])
-                        break
+    #                     erased_curves_indices.append(edge_indices[start_index])
+    #                     start_curve = edge_indices[start_index-1]
+    #                     end_curve = edge_indices[start_index+1]
+    #                     temp = np.linspace(new_datas[start_curve], new_datas[end_curve], end_curve-start_curve+1)
+    #                     new_datas[start_curve:end_curve+1] = temp
+    #                     edge_indices = np.append(edge_indices[:start_index],edge_indices[start_index+1:])
+    #                     break
         
-        remain_required_consider_curves_indices = [i for i in required_consider_curve_indices if i not in erased_curves_indices]
+    #     remain_required_consider_curves_indices = [i for i in required_consider_curve_indices if i not in erased_curves_indices]
 
-        return [new_datas, np.array(erased_curves_indices), np.array(remain_required_consider_curves_indices)]
+    #     return [new_datas, np.array(erased_curves_indices), np.array(remain_required_consider_curves_indices)]
 
 
     def get_intersect_point(self,a: 'list[float,float]',b:'list[float,float]',c:'list[float,float]',d:'list[float,float]') -> 'list[float, float]':
@@ -1088,8 +1110,15 @@ class FeatureExtractor:
 
 
     def get_inner_values(self, data : Union[list, np.ndarray], start : int=0, end=None) -> np.ndarray:
+        ## ex) data = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        ##    start = 24
+        ##      end = 78
+        ##   return = [30,40,50,60,70]
+        
         if not isinstance(data, list) and not isinstance(data, np.ndarray):
             raise Exception("from get_inner_range: input(data) should be list or np.array")
+        if len(data)==0:
+            return np.array([])
         if not isinstance(data, np.ndarray):
             data = np.array(data)
         if end == None:
@@ -1103,20 +1132,24 @@ class FeatureExtractor:
         ## return infos about gradient on curve point and gradient ratio between a curve and its next one  
 
         y_diffs = data[edge_indices[1:]] - data[edge_indices[:-1]]
+
         # diffs2 = data[edge_indices[2:]] - data[edge_indices[1:-1]]
         x_diffs = edge_indices[1:]-edge_indices[:-1]
+
         # distances1 = np.sqrt(np.square(y_diffs) + np.square(x_diffs))
-        distances1 = np.linalg.norm([y_diffs,x_diffs])
+        distances1 = np.linalg.norm([y_diffs,x_diffs],axis=0)
         distances1 = np.append(distances1,0)
         distances2 = distances1[1:]
         distances2 = np.append(distances2, 0)
 
         grads = (y_diffs) / (edge_indices[1:] - edge_indices[:-1]).astype(np.float32)
         grads = np.append(grads,0)
+        y_diffs = np.append(y_diffs,0)
+        x_diffs = np.append(x_diffs,0)
         abs_grads = np.abs(grads)
         grad_ratios = abs_grads / (np.append(np.square(grads[1:]),0) + 1e-6)
 
-        return {'distances1':distances1, 'distances2':distances2, 'y_diffs':y_diffs, 'grads':grads, 'abs_grads':abs_grads, 'grad_ratios':grad_ratios}
+        return {'distances1':distances1, 'distances2':distances2, 'x_diffs':x_diffs, 'y_diffs':y_diffs, 'grads':grads, 'abs_grads':abs_grads, 'grad_ratios':grad_ratios}
 
 
     def get_manual_nystagmus_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict = None)->np.ndarray:
@@ -1146,10 +1179,10 @@ class FeatureExtractor:
         bool_grad_ratio_condition3 = (grad_ratios >= grad_ratio_min_limit) & (grad_ratios <= grad_ratio_max_limit)
 
         ## prev gradient must bigger than next one.
-        bool_additional_condition = abs_grads[:-1] > abs_grads[1:]
-        bool_additional_condition = np.append(bool_additional_condition, False)
+        bool_gradient_compare_condition = abs_grads[:-1] > abs_grads[1:]
+        bool_gradient_compare_condition = np.append(bool_gradient_compare_condition, False)
 
-        bool_manual_nystagmus_condition = bool_distance_condition & bool_next_distance_condition & bool_grad_ratio_condition3 & bool_additional_condition
+        bool_manual_nystagmus_condition = bool_distance_condition & bool_next_distance_condition & bool_grad_ratio_condition3 & bool_gradient_compare_condition
 
         return edge_indices[bool_manual_nystagmus_condition]
 
@@ -1174,13 +1207,14 @@ class FeatureExtractor:
         return result
 
 
-    def get_statistical_nystagmus_indices(self, data:np.ndarray, edge_indices:np.ndarray, additional_indices:np.ndarray=None)->np.ndarray:
+    def get_statistical_nystagmus_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict, additional_indices:np.ndarray=np.array([]))->np.ndarray:
         ## make additional indieces with outliers of the gradient of the data
         
-        outlier_indices1, lower_bound1, upper_bound1 = self.get_outlier_indices(data, edge_indices, iqr_multiplier_x10=15, partial='all', flag_curve=False)
-        outlier_indices2, lower_bound2, upper_bound2 = self.get_outlier_indices(data, edge_indices, iqr_multiplier_x10=15, partial='positive', flag_curve=False)
-        outlier_indices3, lower_bound3, upper_bound3 = self.get_outlier_indices(data, edge_indices, iqr_multiplier_x10=15, partial='positive', flag_curve=True)
-        total_outlier_indices = np.concatenate([outlier_indices1, outlier_indices2, outlier_indices3, additional_indices])
+        outlier_indices1, lower_bound1, upper_bound1 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='all', flag_edge=False)
+        outlier_indices2, lower_bound2, upper_bound2 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='positive', flag_edge=False)
+        outlier_indices3, lower_bound3, upper_bound3 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='all', flag_edge=True)
+        outlier_indices4, lower_bound4, upper_bound4 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='positive', flag_edge=True)
+        total_outlier_indices = np.concatenate([outlier_indices1, outlier_indices2, outlier_indices3, outlier_indices4, additional_indices])
         total_outlier_indices = np.unique(total_outlier_indices)
         closest_curve_indices = self.get_most_left_close_curve_indices(data, edge_indices, total_outlier_indices)
         
@@ -1195,4 +1229,4 @@ if __name__ == '__main__':
     a = fe.get_grouped_sequence([0,5,7,8,9,10,15,17,18,22,24,25,26])
     print(a)
     
-    np.linalg.norm()
+    # np.linalg.norm()

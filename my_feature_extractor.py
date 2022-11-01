@@ -330,7 +330,7 @@ class FeatureExtractor:
         return list_
 
 
-    def get_gradient_outlier_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict, iqr_multiplier_x10:float=1.5, partial:str='all', flag_edge:str=True) ->'list[np.ndarray, list[float,float]]':
+    def get_gradient_outlier_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict, iqr_multiplier_x10:float=15, partial:str='all', flag_edge:str=True) ->'list[np.ndarray, list[float,float]]':
         ## the parameter named partial can be either 'all' or 'positive'.
         ## 'positive' will make the grads to abs(grads)
         ## flag_edge means that it will be considered with only withing the edge_indices otherwise considered with all gradient of the data  ( grads = data[1:]-data[:-1] ).
@@ -353,8 +353,8 @@ class FeatureExtractor:
         upper_bound = q3 + (iqr * iqr_multiplier_x10)
         lower_bound = q1 - (iqr * iqr_multiplier_x10)
 
-        bool_bound_condition = (grads > upper_bound) & (grads < lower_bound)
-        
+        bool_bound_condition = (grads > upper_bound) | (grads < lower_bound)
+
         return [edge_indices[bool_bound_condition], lower_bound, upper_bound]
 
 
@@ -882,13 +882,14 @@ class FeatureExtractor:
         values = data[curve_indices]
         diffs = values[1:] - values[:-1]
         frame_diffs = curve_indices[1:] - curve_indices[:-1]
-        
+
         norm1_distances = abs(diffs) + frame_diffs
-        raise NotImplementedError()
+        # norm1_distances = abs(diffs)
+
         consider_needed = np.where(abs(diffs[:-1]) < value_distance_thres)[0]   ## diffs[:-1] ==> because of the below process (consider_needed_grouped_2[idx] = [first_value, last_value+1]) last_value+1 means last_index+1 so it has over limit the array's index
+        # print("consider_needed:",consider_needed)
         # make sequence grouped. ex) [1,2,3,6,7,9,12,15,16,17] ==> [[1,3],[6,7],[9],[12],[15,17]]
         consider_needed_grouped = self.get_grouped_sequence(consider_needed)
-        
         consider_needed_grouped_2 = consider_needed_grouped[:]
         for idx, item in enumerate(consider_needed_grouped):
             last_value = item[-1]
@@ -898,6 +899,7 @@ class FeatureExtractor:
             else:
                 consider_needed_grouped_2[idx] = [first_value, last_value+1]
         
+
         ## erase_needed_infos == [[start_index_of_curve_indices, end_index_of_curve_indices, left_outer_distance, right_outer_distance],...]
         consider_needed_infos = []
         for consider_needed_start, consider_needed_end in consider_needed_grouped_2:
@@ -914,7 +916,7 @@ class FeatureExtractor:
         for consider_infos in consider_needed_infos:
             consider_start, consider_end, left_outer_distance, right_outer_distance = consider_infos
             ## not good result when it comes to outside of the tip, just skip
-            if consider_start <= 0:
+            if consider_start < 0:
                 continue
             if consider_end >= len(curve_indices)-1:
                 continue
@@ -922,7 +924,6 @@ class FeatureExtractor:
             ## if single curve, call the self.erase_inside_single_curve().
             if (consider_end - consider_start) == 1:
                 temp_erased_curve_list, temp_remain_curve_list = self.erase_inside_single_curve(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]])
-                
                 erased_curve_index_list += temp_erased_curve_list
                 # remain_curve_index_list += temp_remain_curve_list
                 
@@ -937,22 +938,22 @@ class FeatureExtractor:
                 if frame_diff < frames_thres:
                     ## the frame gap is over the thres. so each edge of curve sequnce will be remain
                     
-                    temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]],flag_inner_outer='inner')
+                    temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]],flag_inner_outer='inner')    ## only 'inner' result is much better so far.
+                    # temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]],flag_inner_outer='outer')
                     erased_curve_index_list += temp_erased_curve_list
                     # remain_curve_index_list += temp_remain_curve_list
                     
                 else: ## continueous curves are less than thres
                     # required_consider_edge_curve_list += [start_index, end_index]
-                    temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]],flag_inner_outer='outer')
+                    temp_erased_curve_list, temp_remain_curve_list = self.erase_curve_sequence_with_non_directly(result_data, curve_indices, [[consider_start, consider_end, left_outer_distance, right_outer_distance]],flag_inner_outer='inner')
+
                     erased_curve_index_list += temp_erased_curve_list
                     # remain_curve_index_list += temp_remain_curve_list
 
 
         erased_curve_indices = np.array(erased_curve_index_list)
-        # required_consider_edge_curve_list = np.array(required_consider_edge_curve_list)
-        # return [result, curve_indices[erased_curve_index_list], curve_indices[required_consider_edge_curve_list]]
-        
         remain_curve_indices = [i for i in curve_indices if i not in erased_curve_index_list]
+        
         return [result_data, erased_curve_indices, np.array(remain_curve_indices)]
         
 
@@ -1145,47 +1146,59 @@ class FeatureExtractor:
         grads = (y_diffs) / (edge_indices[1:] - edge_indices[:-1]).astype(np.float32)
         grads = np.append(grads,0)
         y_diffs = np.append(y_diffs,0)
+        y_abs_diffs = abs(y_diffs)
         x_diffs = np.append(x_diffs,0)
         abs_grads = np.abs(grads)
         grad_ratios = abs_grads / (np.append(np.square(grads[1:]),0) + 1e-6)
 
-        return {'distances1':distances1, 'distances2':distances2, 'x_diffs':x_diffs, 'y_diffs':y_diffs, 'grads':grads, 'abs_grads':abs_grads, 'grad_ratios':grad_ratios}
+        return {'distances1':distances1, 'distances2':distances2, 'x_diffs':x_diffs, 'y_diffs':y_diffs, 'y_abs_diffs':y_abs_diffs, 'grads':grads, 'abs_grads':abs_grads, 'grad_ratios':grad_ratios}
 
 
     def get_manual_nystagmus_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict = None)->np.ndarray:
         ## data must have no None value, only numeric.
         
-        # y_diff_min_limit1 = 0.4
         # y_diff_min_limit2 = 0.05
+        
+        min_first_abs_gradient_limit = 0.4
         grad_ratio_min_limit = 0.7
         grad_ratio_max_limit = np.inf
-        distance_min_limit = 0.4
-        next_distance_min_limit = 0.05
+        min_distance_limit = 2
+        min_next_distance_limit = 2
+        min_distance_ratio_limit = 0.25
+        y_diff_min_limit = 2
 
         if not isinstance(info_dict,dict):
             info_dict = self.get_gradients_infos(data,edge_indices)
 
         distances = info_dict['distances1']
-        next_distance = info_dict['distances2']
-        y_diffs = info_dict['y_diffs']
+        next_distances = info_dict['distances2']
+        y_abs_diffs = info_dict['y_abs_diffs']
         grads = info_dict['grads']
         abs_grads = info_dict['abs_grads']
         grad_ratios = info_dict['grad_ratios']
 
-        bool_distance_condition = (distances >= distance_min_limit)
-        bool_next_distance_condition = (next_distance >= next_distance_min_limit)
+        bool_distance_condition = (distances >= min_distance_limit)
+        bool_next_distance_condition = (next_distances >= min_next_distance_limit)
+        bool_distance_ratio_condition = (next_distances >= distances*min_distance_ratio_limit)
+        
+        bool_y_diff_condition = (y_abs_diffs >= y_diff_min_limit)
+        # bool_next_distance_condition = (next_distance >= next_distance_min_limit)
+        
+        bool_gradient_condition = (abs_grads >= min_first_abs_gradient_limit)
         
         ## grad_ratio limit
-        bool_grad_ratio_condition3 = (grad_ratios >= grad_ratio_min_limit) & (grad_ratios <= grad_ratio_max_limit)
+        bool_grad_ratio_condition = (grad_ratios >= grad_ratio_min_limit) & (grad_ratios <= grad_ratio_max_limit)
 
         ## prev gradient must bigger than next one.
         bool_gradient_compare_condition = abs_grads[:-1] > abs_grads[1:]
         bool_gradient_compare_condition = np.append(bool_gradient_compare_condition, False)
 
-        bool_manual_nystagmus_condition = bool_distance_condition & bool_next_distance_condition & bool_grad_ratio_condition3 & bool_gradient_compare_condition
+        bool_manual_nystagmus_condition = bool_distance_condition & bool_next_distance_condition & bool_distance_ratio_condition & bool_y_diff_condition & bool_gradient_condition & bool_grad_ratio_condition & bool_gradient_compare_condition
 
-        return edge_indices[bool_manual_nystagmus_condition]
-
+        manual_nystagmus_indices = edge_indices[bool_manual_nystagmus_condition]
+        closest_curve_indices = self.get_most_left_close_curve_indices(data, edge_indices, manual_nystagmus_indices)
+        
+        return closest_curve_indices
     
     def get_most_left_close_curve_indices(self, data:np.ndarray, edge_indices:np.ndarray, candidate_indices:np.ndarray) -> np.ndarray:
         ## to erase duplicate nearby index.
@@ -1209,13 +1222,13 @@ class FeatureExtractor:
 
     def get_statistical_nystagmus_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict, additional_indices:np.ndarray=np.array([]))->np.ndarray:
         ## make additional indieces with outliers of the gradient of the data
-        
         outlier_indices1, lower_bound1, upper_bound1 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='all', flag_edge=False)
         outlier_indices2, lower_bound2, upper_bound2 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='positive', flag_edge=False)
         outlier_indices3, lower_bound3, upper_bound3 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='all', flag_edge=True)
         outlier_indices4, lower_bound4, upper_bound4 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='positive', flag_edge=True)
         total_outlier_indices = np.concatenate([outlier_indices1, outlier_indices2, outlier_indices3, outlier_indices4, additional_indices])
-        total_outlier_indices = np.unique(total_outlier_indices)
+        total_outlier_indices = np.unique(total_outlier_indices.astype(np.int32))
+        
         closest_curve_indices = self.get_most_left_close_curve_indices(data, edge_indices, total_outlier_indices)
         
         return closest_curve_indices
@@ -1226,7 +1239,5 @@ class FeatureExtractor:
 
 if __name__ == '__main__':
     fe = FeatureExtractor()
-    a = fe.get_grouped_sequence([0,5,7,8,9,10,15,17,18,22,24,25,26])
-    print(a)
     
     # np.linalg.norm()

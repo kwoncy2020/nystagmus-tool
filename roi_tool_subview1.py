@@ -30,14 +30,16 @@ class MySeqObs1(MyObserve):
         self.fe = FeatureExtractor()
         self.edge_indices = edge_indices
         self.erased_edge_indices = erased_edge_indices
+        self.edge_info_dict = {}
         self.edge_info_distances1 = np.array([])
         self.edge_info_distances2 = np.array([])
         self.edge_info_x_diffs = np.array([])
         self.edge_info_y_diffs = np.array([])
+        self.edge_info_y_abs_diffs = np.array([])
         self.edge_info_grads = np.array([])
         self.edge_info_grad_ratios = np.array([])
-        self.manual_nystagmus_indices = np.array([])
-        self.statistical_nystagmus_indices = np.array([])
+        self.edge_info_manual_nystagmus_indices = np.array([])
+        self.edge_info_statistical_nystagmus_indices = np.array([])
         self.connect(self.update_edge_infos)
     
     def set(self, new_values:np.ndarray, new_edge_indices:np.ndarray, new_erased_edge_indices:np.ndarray):
@@ -46,19 +48,24 @@ class MySeqObs1(MyObserve):
         self.erased_edge_indices = new_erased_edge_indices.copy()
         
         for func in self._connect_functions:
-            func(self.value, self.edge_indices, self.erased_edge_indices)
+            func(data=self.value, edge_indices=self.edge_indices, erased_edge_indices=self.erased_edge_indices, edge_info_dict=self.edge_info_dict)
             
-    def update_edge_infos(self, value:np.ndarray, edge_indices:np.ndarray, erased_edge_indices:np.ndarray=np.array([])):
-        info_dict = self.fe.get_gradients_infos(value,edge_indices)
-        self.edge_info_distances1 = info_dict['distances1']
-        self.edge_info_distances2 = info_dict['distances2']
-        self.edge_info_x_diffs = info_dict['x_diffs']
-        self.edge_info_y_diffs = info_dict['y_diffs']      # y_differences within edge_indices
-        self.edge_info_grads = info_dict['grads']
-        self.edge_info_grad_ratios = info_dict['grad_ratios']   # the sequence of (grad / np.square(next_grad))
-        self.edge_info_manual_nystagmus_indices = self.fe.get_manual_nystagmus_indices(value,edge_indices,info_dict=info_dict)
-        self.edge_info_statistical_nystagmus_indices = self.fe.get_statistical_nystagmus_indices(value, edge_indices, info_dict=info_dict)
+    def update_edge_infos(self, **kargs):
+        value = kargs['data']
+        edge_indices = kargs['edge_indices']
+        erased_edge_indices = kargs['erased_edge_indices']
         
+        self.edge_info_dict = self.fe.get_gradients_infos(value,edge_indices)
+        self.edge_info_distances1 = self.edge_info_dict['distances1']
+        self.edge_info_distances2 = self.edge_info_dict['distances2']
+        self.edge_info_x_diffs = self.edge_info_dict['x_diffs']
+        self.edge_info_y_diffs = self.edge_info_dict['y_diffs']      # y_differences within edge_indices
+        self.edge_info_y_abs_diffs = self.edge_info_dict['y_abs_diffs']
+        self.edge_info_grads = self.edge_info_dict['grads']
+        self.edge_info_grad_ratios = self.edge_info_dict['grad_ratios']   # the sequence of (grad / np.square(next_grad))
+        self.edge_info_manual_nystagmus_indices = self.fe.get_manual_nystagmus_indices(value,edge_indices,info_dict=self.edge_info_dict)
+        self.edge_info_statistical_nystagmus_indices = self.fe.get_statistical_nystagmus_indices(value, edge_indices, info_dict=self.edge_info_dict)
+
 
 class SubGui1(QWidget):
 # class SubGui1(QMainWindow):
@@ -483,6 +490,7 @@ class MyGuiModule(QWidget):
         self.plt_show_end_idx = None
         self.plt_show_palette = PltShowPalette()
         self.plt_img = None
+        self.plt_y_max_gap = 0
         ## parameters for show and display plt
         self.npimg_base_display = None
         self.npimg_current_display = None
@@ -923,7 +931,7 @@ class MyGuiModule(QWidget):
         if f_thres == '': f_thres=5
 
         if flag_filter_modify_base_curve:
-            filtered1_x_arr, erased_edge_indices, remain_edge_indices  = self.myfe.filter_modify_base_curve(self.base_x_arr,d_thres,f_thres)
+            filtered1_x_arr, erased_edge_indices, remain_edge_indices  = self.myfe.filter_modify_base_curve(self.base_x_arr,self.base_edge_indices,d_thres,f_thres)
             self.current_selected_x_arr.set(filtered1_x_arr, remain_edge_indices, erased_edge_indices)
 
 
@@ -987,7 +995,10 @@ class MyGuiModule(QWidget):
             self.cb_btn_statistics_outlier_change()
         
         
-    def set_current_outlier_indices(self, x_arr:np.ndarray, edge_indices:np.ndarray, erased_edge_indices:np.ndarray=np.array([])):
+    def set_current_outlier_indices(self, **kargs):
+        x_arr = kargs['data']
+        edge_indices = kargs['edge_indices']
+        edge_info_dict = kargs['edge_info_dict']
         bool_radio1 = self.radio_statistics_entire_gradient_outlier_activate.isChecked()
         bool_radio2 = self.radio_statistics_dist_outlier_activate.isChecked()
         bool_radio3 = self.radio_statistics_curve_gradient_outlier_activate.isChecked()
@@ -1003,11 +1014,11 @@ class MyGuiModule(QWidget):
         # if bool_radio1 and bool_radio2:
             # self.current_upper_outlier_indices, lower_bound, upper_bound = self.myfe.get_gradient_outlier_indices(x_arr,iqr_multiplier_x10=iqr,partial='upper',flag_edge=True)
         if bool_radio1:
-            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_gradient_outlier_indices(x_arr, edge_indices, iqr_multiplier_x10=iqr, partial='all', flag_edge=False)
+            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_gradient_outlier_indices(x_arr, edge_indices, edge_info_dict, iqr_multiplier_x10=iqr, partial='all', flag_edge=False)
         elif bool_radio2:
-            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_gradient_outlier_indices(x_arr, edge_indices, iqr_multiplier_x10=iqr, partial='positive', flag_edge=False)
+            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_gradient_outlier_indices(x_arr, edge_indices, edge_info_dict, iqr_multiplier_x10=iqr, partial='positive', flag_edge=False)
         elif bool_radio3:
-            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_gradient_outlier_indices(x_arr, edge_indices, iqr_multiplier_x10=iqr, partial='positive', flag_edge=True)
+            self.current_outlier_indices, lower_bound, upper_bound = self.myfe.get_gradient_outlier_indices(x_arr, edge_indices, edge_info_dict, iqr_multiplier_x10=iqr, partial='positive', flag_edge=True)
         elif bool_radio4:
             self.current_outlier_indices = None
             lower_bound = None
@@ -1021,7 +1032,7 @@ class MyGuiModule(QWidget):
 
     def cb_btn_statistics_outlier_change(self):
         
-        self.set_current_outlier_indices(self.current_selected_x_arr.value, self.current_selected_x_arr.edge_indices)
+        self.set_current_outlier_indices(data=self.current_selected_x_arr.value, edge_indices=self.current_selected_x_arr.edge_indices, edge_info_dict=self.current_selected_x_arr.edge_info_dict)
         self.update_index()
         return
 
@@ -1315,7 +1326,7 @@ class MyGuiModule(QWidget):
         self.undo_list.pop()
 
 ################ methods
-    def update_index(self, dummy1=None, dummy2=None, dummy3=None):
+    def update_index(self, **obskargs):
         self.signal_current_index.emit(self.current_index)
         self.set_current_index_lbl()
         self.is_slider_user_interact = False
@@ -1671,7 +1682,7 @@ class MyGuiModule(QWidget):
         if isinstance(data,list):
             data = np.array(data)
         if not isinstance(data,np.ndarray):
-            return
+            return np.array([])
         inner_range_indices = self.myfe.get_inner_values(data,start,end)
         if len(inner_range_indices) == 0:
             return np.array([])
@@ -1729,11 +1740,20 @@ class MyGuiModule(QWidget):
         # outlier_catched_indices_resized = self.help_make_display_make_indices_resized(self.base_outlier_catched_x_indices, start, end, white_point_width)
         # merged_none_indices_resized = self.help_make_display_make_indices_resized(self.base_merged_none_x_indices, start, end, white_point_width)
         current_outlier_indices_resized = self.help_make_display_make_indices_resized(self.current_outlier_indices, start, end, white_point_width)
-        statistical_nystagmus_indices = self.current_selected_x_arr.statistical_nystagmus_indices
-        current_candidate_curve_indices_resized = self.help_make_display_make_indices_resized(statistical_nystagmus_indices, start, end, white_point_width)
+        edge_info_manual_nystagmus_indices = self.current_selected_x_arr.edge_info_manual_nystagmus_indices
+        manual_nystagmus_indices = self.help_make_display_make_indices_resized(edge_info_manual_nystagmus_indices, start, end, white_point_width)
+        edge_info_statistical_nystagmus_indices = self.current_selected_x_arr.edge_info_statistical_nystagmus_indices
+        statistical_nystagmus_indices = self.help_make_display_make_indices_resized(edge_info_statistical_nystagmus_indices, start, end, white_point_width)
         
-        if isinstance(current_candidate_curve_indices_resized, np.ndarray) and len(current_candidate_curve_indices_resized) != 0:
-            palette[:, current_candidate_curve_indices_resized] += np.array([127,127,60], dtype=np.uint8)
+        ## draw statistical_nystagmus_indices
+        if isinstance(statistical_nystagmus_indices, np.ndarray) and len(statistical_nystagmus_indices) != 0:
+            palette[:, statistical_nystagmus_indices] += np.array([127,127,60], dtype=np.uint8)
+ 
+ 
+        ## draw manual_nystagmus_indices
+        if isinstance(manual_nystagmus_indices, np.ndarray) and len(manual_nystagmus_indices) != 0:
+            palette[:, manual_nystagmus_indices] += np.array([128,0,128], dtype=np.uint8)
+ 
  
         for i in range(width):
             # palette[new_x_datas[i]-white_point_height:new_x_datas[i], i*white_point_width:i*white_point_width+white_point_width] = np.array([255,255,255], dtype=np.uint8)
@@ -1751,33 +1771,222 @@ class MyGuiModule(QWidget):
         return
 
 
+    # ## this function is no longer used. will be deprecated.
+    # def make_plot_with_animate(self, start:int=0, end:int=None, current_idx:int=None, is_refresh:bool=True) -> None:
+    #     ## prepare to draw
+    #     fig = self.fig
+    #     axes = self.ax
+    #     axes.clear()   
+
+    #     if is_refresh == False:
+    #         if self.temporal_plt_background is None:
+    #             self.make_plot(start,end,current_idx,is_refresh=True)
+    #             # print(1)
+
+    #         fig.canvas.restore_region(self.temporal_plt_background)
+            
+    #         # if current_idx != None:
+    #         #     ani_vline = axes.axvline(current_idx-start,0,1,color='red', linestyle='solid', animated=True)
+    #         #     axes.draw_artist(ani_vline)
+    #         if current_idx != None:
+    #             axes.axvline(current_idx-start,0,1,color='red', linestyle='solid')
+                
+    #         ## save plt to numpy
+    #         fig.canvas.draw()
+    #         plt_img = np.array(fig.canvas.renderer._renderer)
+    #         plt_img_rgb = cv2.cvtColor(plt_img, cv2.COLOR_RGBA2RGB)
+    #         plt_img_rgb_resized = cv2.resize(plt_img_rgb, (self.PLT_SHOW_WIDTH,self.PLT_SHOW_HEIGHT), interpolation=cv2.INTER_LINEAR)
+    #         self.plt_img = plt_img_rgb_resized.copy()
+    #         # print(2)
+    #         return
+        
+    #     current_x_arr = self.current_selected_x_arr.value
+    #     if not isinstance(current_x_arr,np.ndarray):
+    #         raise Exception("from make_plot: self.current_selected_x_arr.value is no np.ndarray")
+    #     if start == None:
+    #         start = 0
+    #     if start >= self.maximum_index:
+    #         return
+    #     if end == None:
+    #         end = len(current_x_arr)
+    #     if end <= start:
+    #         end = start + 100
+    #     if end > self.maximum_index:
+    #         end = self.maximum_index
+        
+    #     ## prepare basic datas
+    #     base_x_inner_datas = self.base_x_arr[start:end+1]
+    #     meaned_base_x_inner_datas = base_x_inner_datas - base_x_inner_datas.mean()
+    #     current_selected_x_inner_datas = current_x_arr[start:end+1]
+    #     meaned_current_selected_x_inner_datas = current_selected_x_inner_datas - current_selected_x_inner_datas.mean()
+    #     current_edge_indices = self.current_selected_x_arr.edge_indices
+    #     current_edge_indices_inner_range = self.myfe.get_inner_values(current_edge_indices,start,end)
+    #     current_erased_indices = self.current_selected_x_arr.erased_edge_indices
+    #     current_erased_indices_inner_range = self.myfe.get_inner_values(current_erased_indices,start,end)
+    #     edge_info_statistical_nystagmus_indices = self.current_selected_x_arr.edge_info_statistical_nystagmus_indices
+    #     edge_info_statistical_nystagmus_indices_inner_range = self.myfe.get_inner_values(edge_info_statistical_nystagmus_indices,start,end)
+    #     edge_info_manual_nystagmus_indices = self.current_selected_x_arr.edge_info_manual_nystagmus_indices
+    #     edge_info_manual_nystagmus_indices_inner_range = self.myfe.get_inner_values(edge_info_manual_nystagmus_indices, start, end)
+        
+        
+    #     max_y = max(meaned_current_selected_x_inner_datas)
+    #     min_y = min(meaned_current_selected_x_inner_datas)
+    #     y_ticks_ = np.linspace(min_y,max_y,5)
+    #     x_ticks_ = np.linspace(start,end,5)
+    #     y_gap = y_ticks_[4]-y_ticks_[0]
+    #     plt_y_gap = 0 
+    #     if y_gap > plt_y_gap:
+    #         plt_y_gap = y_gap
+
+    #     bottom, top = plt.ylim()
+
+    #     # if self.temporal_plt_background == None:
+    #     #     fig.canvas.draw()
+    #     #     self.temporal_plt_background = fig.canvas.copy_from_bbox(axes.bbox)
+
+    #     ## draw x, y ticks with animate
+    #     # art_text_xticks = []
+    #     # art_text_yticks = []
+    #     # for i in x_ticks:
+    #     #     art_text_xticks.append(axes.text(i-start,min_y-y_gap*0.1,f'{i:.0f}', animated=True))
+    #     # for i in y_ticks:
+    #     #     art_text_yticks.append(axes.text(0,i,f'{i:.2f}', animated=True))
+    #     # for i in range(len(art_text_xticks)):
+    #     #         art_text = art_text_xticks[i]
+    #     #         axes.draw_artist(art_text)
+    #     # for i in art_text_yticks:
+    #     #         axes.draw_artist(i)
+        
+    #     ## draw basic plot with animate. must this plot follow drawing one of scatter or text series. otherwise if this plot comes at first, not working proferly
+    #     # ani_plot_current_selected_x = axes.plot(range(end-start+1), meaned_current_selected_x_inner_datas,animated=True)[0]
+    #     # axes.draw_artist(ani_plot_current_selected_x)
+
+
+
+    #     ## draw basic plot
+    #     axes.text(20,min_y-0.1, f'plt_y_gap:{plt_y_gap:.2f}')
+    #     axes.text(60,min_y-0.2, f'yticks:{bottom,top}')
+    #     for i in x_ticks_:
+    #         axes.text(i-start,min_y-0.2,f"{i:.0f}")
+    #         axes.axvline(i-start,0,1,c='gray',linestyle='--')
+    #     axes.plot(range(end-start+1), meaned_base_x_inner_datas, c='cyan')
+    #     axes.plot(range(end-start+1), meaned_current_selected_x_inner_datas, c='blue')
+
+
+
+    #     ## draw curve_indices info with animate
+    #     # if isinstance(self.curve_indices, np.ndarray):
+    #     #     curve_indices_inner_range = self.myfe.get_inner_values(self.curve_indices, start, end)
+    #     #     art_texts1 = []
+    #     #     texts1 = []
+    #     #     for i in curve_indices_inner_range:
+    #     #         curve_idx = np.where(self.curve_indices == i)[0][0]
+    #     #         if curve_idx > len(self.y_diffs)-1:
+    #     #             continue
+    #     #         art_texts1.append(axes.text(i-start, meaned_current_selected_x_inner_datas[i-start], '', rotation=30, color='red',animated=True))
+    #     #         texts1.append(f'{self.y_diffs[curve_idx]:.1f}, {self.grad_ratios[curve_idx]:5.2f}')
+    #     #     for i in range(len(art_texts1)):
+    #     #         art_text = art_texts1[i]
+    #     #         art_text.set_text(texts1[i])
+    #     #         axes.draw_artist(art_text)
+
+    #     #     ani_scat1 = axes.scatter(curve_indices_inner_range-start, meaned_current_selected_x_inner_datas[curve_indices_inner_range-start], color='g', animated=True)
+    #     #     axes.draw_artist(ani_scat1)
+        
+
+    #     ## draw edge_indices info
+    #     if len(current_edge_indices_inner_range) != 0:
+    #         axes.scatter(current_edge_indices_inner_range-start, meaned_current_selected_x_inner_datas[current_edge_indices_inner_range-start], color='g')
+
+    #     edge_indices = current_edge_indices
+    #     edge_inner_indices = current_edge_indices_inner_range
+    #     grads = self.current_selected_x_arr.edge_info_grads
+    #     grad_ratios = self.current_selected_x_arr.edge_info_grad_ratios
+    #     distances1 = self.current_selected_x_arr.edge_info_distances1
+    #     distances2 = self.current_selected_x_arr.edge_info_distances2
+    #     x_diffs = self.current_selected_x_arr.edge_info_x_diffs
+    #     y_diffs = self.current_selected_x_arr.edge_info_y_diffs
+        
+    #     for i in edge_inner_indices:
+    #         edge_idx = np.where(edge_indices == i)[0][0]
+    #         if edge_idx > len(grads)-1:
+    #             continue
+    #         axes.text(i-start, meaned_current_selected_x_inner_datas[i-start], f"g({grads[edge_idx]:.1f}), gr({grad_ratios[edge_idx]:.2f})", rotation=30)
+    #         # axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-min(y_gap*0.1, 1), f"d1({distances1[edge_idx]:.2f}), d2({distances2[edge_idx]:.2f})", rotation=30)
+    #         axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-0.2, f"d1({distances1[edge_idx]:.2f}), d2({distances2[edge_idx]:.2f})", rotation=30)
+    #         # axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-min(y_gap*0.2, 2), f"x_d({x_diffs[edge_idx]:.2f}), y_d({y_diffs[edge_idx]:.2f})", rotation=30)
+    #         axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-0.4, f"x_d({x_diffs[edge_idx]:.2f}), y_d({y_diffs[edge_idx]:.2f})", rotation=30)
+
+    #     ## draw x_none_indices with animate
+    #     # if isinstance(self.x_none_indices, np.ndarray):
+    #     #     none_indices_inner_range = self.myfe.get_inner_values(self.x_none_indices, start, end)
+    #     #     ani_scat2 = axes.scatter(none_indices_inner_range-start, meaned_current_selected_x_inner_datas[none_indices_inner_range-start], color='black', animated=True)
+    #     #     axes.draw_artist(ani_scat2)
+
+    #     ## draw x_none_indices
+    #     if isinstance(self.x_none_indices, np.ndarray):
+    #         none_indices_inner_range = self.myfe.get_inner_values(self.x_none_indices, start, end)
+    #         axes.scatter(none_indices_inner_range-start, meaned_current_selected_x_inner_datas[none_indices_inner_range-start], color='black')
+
+
+    #     ## draw erased_curves_by_filter with animate
+    #     # if isinstance(self.erased_curves_by_filter, np.ndarray):
+    #     #     erased_curves_by_filter_inner_range = self.myfe.get_inner_values(self.erased_curves_by_filter,start,end)
+    #     #     ani_scat_erased = axes.scatter(erased_curves_by_filter_inner_range-start, meaned_base_x_inner_datas[erased_curves_by_filter_inner_range-start], color='gray', animated=True)
+    #     #     axes.draw_artist(ani_scat_erased)
+
+    #     ## draw current_erased_indices_inner_range
+    #     if len(current_erased_indices_inner_range) != 0:
+    #         axes.scatter(current_erased_indices_inner_range-start, meaned_base_x_inner_datas[current_erased_indices_inner_range-start], color='gray')
+            
+
+    #     ## draw current_outliers with animate
+    #     # if isinstance(self.current_outlier_indices, np.ndarray):
+    #     #     current_outlier_indices_inner_range = self.myfe.get_inner_values(self.current_outlier_indices,start,end)
+    #     #     art_text_current_outliers = []
+    #     #     for i in current_outlier_indices_inner_range:
+    #     #         art_text_current_outliers.append(axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-y_gap*0.2, 'n2', color='blue',animated=True))
+    #     #     for i in range(len(art_text_current_outliers)):
+    #     #         axes.draw_artist(art_text_current_outliers[i])
+
+    #     ## draw current_outliers
+    #     if isinstance(self.current_outlier_indices, np.ndarray):
+    #         current_outlier_indices_inner_range = self.myfe.get_inner_values(self.current_outlier_indices,start,end)
+    #         if len(current_outlier_indices_inner_range) != 0:
+    #             for i in current_outlier_indices_inner_range:
+    #                 # axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-min(y_gap*0.1, 1), 'o', color='orange')
+    #                 axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-0.2, 'o', color='orange')
+            
+    #     if len(edge_info_statistical_nystagmus_indices_inner_range) != 0:
+    #         for i in edge_info_statistical_nystagmus_indices_inner_range:
+    #             # axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-min(y_gap*0.2, 2), 'stat_n', color='y')
+    #             axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-0.4, 'stat_n', color='y')
+
+    #     if len(edge_info_manual_nystagmus_indices_inner_range) != 0:
+    #         for i in edge_info_manual_nystagmus_indices_inner_range:
+    #             # axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-min(y_gap*0.3,3), 'man_n', color='purple')
+    #             axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-0.6, 'man_n', color='purple')
+
+
+    #     fig.canvas.draw()
+    #     self.temporal_plt_background = fig.canvas.copy_from_bbox(axes.bbox)
+    #     # fig.canvas.blit(axes.bbox)
+    #     # fig.canvas.flush_events()
+    #     if current_idx != None:
+    #         axes.axvline(current_idx-start,0,1,color='red', linestyle='solid')
+    #     fig.canvas.draw()
+    #     plt_img = np.array(fig.canvas.renderer._renderer)
+    #     plt_img_rgb = cv2.cvtColor(plt_img, cv2.COLOR_RGBA2RGB)
+    #     plt_img_rgb_resized = cv2.resize(plt_img_rgb, (self.PLT_SHOW_WIDTH,self.PLT_SHOW_HEIGHT), interpolation=cv2.INTER_LINEAR)
+    #     self.plt_img = plt_img_rgb_resized.copy()
+    #     # print('3')
+    #     return
+
     def make_plot(self, start:int=0, end:int=None, current_idx:int=None, is_refresh:bool=True) -> None:
         ## prepare to draw
         fig = self.fig
         axes = self.ax
         axes.clear()   
-
-        if is_refresh == False:
-            if self.temporal_plt_background is None:
-                self.make_plot(start,end,current_idx,is_refresh=True)
-                # print(1)
-
-            fig.canvas.restore_region(self.temporal_plt_background)
-            
-            # if current_idx != None:
-            #     ani_vline = axes.axvline(current_idx-start,0,1,color='red', linestyle='solid', animated=True)
-            #     axes.draw_artist(ani_vline)
-            if current_idx != None:
-                axes.axvline(current_idx-start,0,1,color='red', linestyle='solid')
-                
-            ## save plt to numpy
-            fig.canvas.draw()
-            plt_img = np.array(fig.canvas.renderer._renderer)
-            plt_img_rgb = cv2.cvtColor(plt_img, cv2.COLOR_RGBA2RGB)
-            plt_img_rgb_resized = cv2.resize(plt_img_rgb, (self.PLT_SHOW_WIDTH,self.PLT_SHOW_HEIGHT), interpolation=cv2.INTER_LINEAR)
-            self.plt_img = plt_img_rgb_resized.copy()
-            # print(2)
-            return
         
         current_x_arr = self.current_selected_x_arr.value
         if not isinstance(current_x_arr,np.ndarray):
@@ -1802,74 +2011,41 @@ class MyGuiModule(QWidget):
         current_edge_indices_inner_range = self.myfe.get_inner_values(current_edge_indices,start,end)
         current_erased_indices = self.current_selected_x_arr.erased_edge_indices
         current_erased_indices_inner_range = self.myfe.get_inner_values(current_erased_indices,start,end)
-        statistical_nystagmus_indices = self.current_selected_x_arr.statistical_nystagmus_indices
-        statistical_nystagmus_indices_inner_range = self.myfe.get_inner_values(statistical_nystagmus_indices,start,end)
-
-        max_y = max(meaned_current_selected_x_inner_datas)
-        min_y = min(meaned_current_selected_x_inner_datas)
-        y_ticks = np.linspace(min_y,max_y,5)
-        x_ticks = np.linspace(start,end,5)
-        y_gap = y_ticks[1]-y_ticks[0]
-
-
-        # if self.temporal_plt_background == None:
-        #     fig.canvas.draw()
-        #     self.temporal_plt_background = fig.canvas.copy_from_bbox(axes.bbox)
-
-        ## draw x, y ticks with animate
-        # art_text_xticks = []
-        # art_text_yticks = []
-        # for i in x_ticks:
-        #     art_text_xticks.append(axes.text(i-start,min_y-y_gap*0.1,f'{i:.0f}', animated=True))
-        # for i in y_ticks:
-        #     art_text_yticks.append(axes.text(0,i,f'{i:.2f}', animated=True))
-        # for i in range(len(art_text_xticks)):
-        #         art_text = art_text_xticks[i]
-        #         axes.draw_artist(art_text)
-        # for i in art_text_yticks:
-        #         axes.draw_artist(i)
+        edge_info_statistical_nystagmus_indices = self.current_selected_x_arr.edge_info_statistical_nystagmus_indices
+        edge_info_statistical_nystagmus_indices_inner_range = self.myfe.get_inner_values(edge_info_statistical_nystagmus_indices,start,end)
+        edge_info_manual_nystagmus_indices = self.current_selected_x_arr.edge_info_manual_nystagmus_indices
+        edge_info_manual_nystagmus_indices_inner_range = self.myfe.get_inner_values(edge_info_manual_nystagmus_indices, start, end)
         
-        ## draw basic plot with animate. must this plot follow drawing one of scatter or text series. otherwise if this plot comes at first, not working proferly
-        # ani_plot_current_selected_x = axes.plot(range(end-start+1), meaned_current_selected_x_inner_datas,animated=True)[0]
-        # axes.draw_artist(ani_plot_current_selected_x)
-
-
-
-        ## draw basic plot
-        for i in x_ticks:
-            axes.text(i-start,min_y-y_gap*0.1,f"{i:.0f}")
-            axes.axvline(i-start,0,1,c='gray',linestyle='--')
+        
+        ## draw basic plot first. this will set xticks, yticks, xlim, ylim automatically.
         axes.plot(range(end-start+1), meaned_base_x_inner_datas, c='cyan')
         axes.plot(range(end-start+1), meaned_current_selected_x_inner_datas, c='blue')
-
-
-
-        ## draw curve_indices info with animate
-        # if isinstance(self.curve_indices, np.ndarray):
-        #     curve_indices_inner_range = self.myfe.get_inner_values(self.curve_indices, start, end)
-        #     art_texts1 = []
-        #     texts1 = []
-        #     for i in curve_indices_inner_range:
-        #         curve_idx = np.where(self.curve_indices == i)[0][0]
-        #         if curve_idx > len(self.y_diffs)-1:
-        #             continue
-        #         art_texts1.append(axes.text(i-start, meaned_current_selected_x_inner_datas[i-start], '', rotation=30, color='red',animated=True))
-        #         texts1.append(f'{self.y_diffs[curve_idx]:.1f}, {self.grad_ratios[curve_idx]:5.2f}')
-        #     for i in range(len(art_texts1)):
-        #         art_text = art_texts1[i]
-        #         art_text.set_text(texts1[i])
-        #         axes.draw_artist(art_text)
-
-        #     ani_scat1 = axes.scatter(curve_indices_inner_range-start, meaned_current_selected_x_inner_datas[curve_indices_inner_range-start], color='g', animated=True)
-        #     axes.draw_artist(ani_scat1)
         
+        ## calculate tick_values to draw text.
+        max_y = max(meaned_current_selected_x_inner_datas)
+        min_y = min(meaned_current_selected_x_inner_datas)
+        y_ticks_ = np.linspace(min_y,max_y,5)
+        x_ticks_ = np.linspace(start,end,5)
+        y_gap = y_ticks_[4]-y_ticks_[0]
+        
+        if y_gap > self.plt_y_max_gap:
+            self.plt_y_max_gap = y_gap
+        
+        loc, labels = plt.yticks()
+        bottom, top = axes.get_ylim()
+        # axes.text(10,min_y-y_gap*0.05, f'plt_y_gap:{self.plt_y_max_gap:.2f}')
+        axes.text(40,min_y-y_gap*0.05, f'bottom, top:{bottom:.2f}, {top:.2f}')
+        # axes.text(70,min_y-y_gap*0.05, f'yticks:{loc, labels}')
+        for i in x_ticks_:
+            axes.text(i-start,min_y-y_gap*0.05,f"{i:.0f}")
+            axes.axvline(i-start,0,1,c='gray',linestyle='--')
+
 
         ## draw edge_indices info
         if len(current_edge_indices_inner_range) != 0:
             axes.scatter(current_edge_indices_inner_range-start, meaned_current_selected_x_inner_datas[current_edge_indices_inner_range-start], color='g')
 
-        edge_indices = current_edge_indices
-        edge_inner_indices = current_edge_indices_inner_range
+        ## prepare edge infos.
         grads = self.current_selected_x_arr.edge_info_grads
         grad_ratios = self.current_selected_x_arr.edge_info_grad_ratios
         distances1 = self.current_selected_x_arr.edge_info_distances1
@@ -1877,72 +2053,59 @@ class MyGuiModule(QWidget):
         x_diffs = self.current_selected_x_arr.edge_info_x_diffs
         y_diffs = self.current_selected_x_arr.edge_info_y_diffs
         
-        for i in edge_inner_indices:
-            edge_idx = np.where(edge_indices == i)[0][0]
+        for i in current_edge_indices_inner_range:
+            edge_idx = np.where(current_edge_indices == i)[0][0]
             if edge_idx > len(grads)-1:
                 continue
             axes.text(i-start, meaned_current_selected_x_inner_datas[i-start], f"g({grads[edge_idx]:.1f}), gr({grad_ratios[edge_idx]:.2f})", rotation=30)
-            axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-0.8, f"d1({distances1[edge_idx]:.2f}), d2({distances2[edge_idx]:.2f})", rotation=30)
-            axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-1.6, f"x_d({x_diffs[edge_idx]:.2f}), y_d({y_diffs[edge_idx]:.2f})", rotation=30)
-
-        ## draw x_none_indices with animate
-        # if isinstance(self.x_none_indices, np.ndarray):
-        #     none_indices_inner_range = self.myfe.get_inner_values(self.x_none_indices, start, end)
-        #     ani_scat2 = axes.scatter(none_indices_inner_range-start, meaned_current_selected_x_inner_datas[none_indices_inner_range-start], color='black', animated=True)
-        #     axes.draw_artist(ani_scat2)
+            # axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-self.plt_y_max_gap*0.02, f"d1({distances1[edge_idx]:.2f}), d2({distances2[edge_idx]:.2f})", rotation=30)
+            axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-y_gap*0.02, f"d1({distances1[edge_idx]:.2f}), d2({distances2[edge_idx]:.2f})", rotation=30)
+            # axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-self.plt_y_max_gap*0.04, f"x_d({x_diffs[edge_idx]:.2f}), y_d({y_diffs[edge_idx]:.2f})", rotation=30)
+            axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-y_gap*0.04, f"x_d({x_diffs[edge_idx]:.2f}), y_d({y_diffs[edge_idx]:.2f})", rotation=30)
 
         ## draw x_none_indices
         if isinstance(self.x_none_indices, np.ndarray):
             none_indices_inner_range = self.myfe.get_inner_values(self.x_none_indices, start, end)
             axes.scatter(none_indices_inner_range-start, meaned_current_selected_x_inner_datas[none_indices_inner_range-start], color='black')
 
-
-        ## draw erased_curves_by_filter with animate
-        # if isinstance(self.erased_curves_by_filter, np.ndarray):
-        #     erased_curves_by_filter_inner_range = self.myfe.get_inner_values(self.erased_curves_by_filter,start,end)
-        #     ani_scat_erased = axes.scatter(erased_curves_by_filter_inner_range-start, meaned_base_x_inner_datas[erased_curves_by_filter_inner_range-start], color='gray', animated=True)
-        #     axes.draw_artist(ani_scat_erased)
-
         ## draw current_erased_indices_inner_range
         if len(current_erased_indices_inner_range) != 0:
             axes.scatter(current_erased_indices_inner_range-start, meaned_base_x_inner_datas[current_erased_indices_inner_range-start], color='gray')
-            
 
-        ## draw current_outliers with animate
-        # if isinstance(self.current_outlier_indices, np.ndarray):
-        #     current_outlier_indices_inner_range = self.myfe.get_inner_values(self.current_outlier_indices,start,end)
-        #     art_text_current_outliers = []
-        #     for i in current_outlier_indices_inner_range:
-        #         art_text_current_outliers.append(axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-y_gap*0.2, 'n2', color='blue',animated=True))
-        #     for i in range(len(art_text_current_outliers)):
-        #         axes.draw_artist(art_text_current_outliers[i])
+
+        
+        ## draw statistical_nystagmus_indices
+        if len(edge_info_statistical_nystagmus_indices_inner_range) != 0:
+            for i in edge_info_statistical_nystagmus_indices_inner_range:
+                axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-y_gap*0.06, 'stat_n', color='y')
+
+        ## draw manual nystagmus indices
+        if len(edge_info_manual_nystagmus_indices_inner_range) != 0:
+            for i in edge_info_manual_nystagmus_indices_inner_range:
+                axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-y_gap*0.08, 'man_n', color='purple')
+
 
         ## draw current_outliers
         if isinstance(self.current_outlier_indices, np.ndarray):
             current_outlier_indices_inner_range = self.myfe.get_inner_values(self.current_outlier_indices,start,end)
             if len(current_outlier_indices_inner_range) != 0:
                 for i in current_outlier_indices_inner_range:
-                    axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-y_gap*0.2, 'n2', color='m')
-            
-        if len(statistical_nystagmus_indices_inner_range) != 0:
-            for i in statistical_nystagmus_indices_inner_range:
-                axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-y_gap*0.1, 'n', color='y')
+                    # axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-self.plt_y_max_gap*0.02, 'o', color='orange')
+                    axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-y_gap*0.1, 'o', color='orange')
 
-        fig.canvas.draw()
-        self.temporal_plt_background = fig.canvas.copy_from_bbox(axes.bbox)
-        # fig.canvas.blit(axes.bbox)
-        # fig.canvas.flush_events()
+
+        ## draw vertical red line to indicate current index on plt.
         if current_idx != None:
             axes.axvline(current_idx-start,0,1,color='red', linestyle='solid')
+        
+        ## draw and make it to nparray to show through label image.
         fig.canvas.draw()
         plt_img = np.array(fig.canvas.renderer._renderer)
         plt_img_rgb = cv2.cvtColor(plt_img, cv2.COLOR_RGBA2RGB)
         plt_img_rgb_resized = cv2.resize(plt_img_rgb, (self.PLT_SHOW_WIDTH,self.PLT_SHOW_HEIGHT), interpolation=cv2.INTER_LINEAR)
         self.plt_img = plt_img_rgb_resized.copy()
-        # print('3')
-        return
-
-                
+        
+        return 
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

@@ -2,6 +2,7 @@ import sys, time, cv2, csv, os, re
 from PyQt5.QtWidgets import *
 from PyQt5 import QtCore, QtGui
 import numpy as np
+import pandas as pd
 from my_feature_extractor import FeatureExtractor
 import matplotlib.pyplot as plt 
 import matplotlib.animation
@@ -17,7 +18,7 @@ class MyObserve:
     
     def set(self, new_value):
         if isinstance(new_value, list) or isinstance(new_value,tuple) or isinstance(new_value,np.ndarray):
-            new_value = new_value.copy()
+            new_value = np.copy(new_value)
         self.value = new_value
         for func in self._connect_functions:
             func(self.value)
@@ -40,6 +41,7 @@ class MySeqObs1(MyObserve):
         self.edge_info_grad_ratios = np.array([])
         self.edge_info_manual_nystagmus_indices = np.array([])
         self.edge_info_statistical_nystagmus_indices = np.array([])
+        self.edge_info_manual_nystagmus_bool_condition = np.array([])
         self.connect(self.update_edge_infos)
     
     def set(self, new_values:np.ndarray, new_edge_indices:np.ndarray, new_erased_edge_indices:np.ndarray):
@@ -63,7 +65,7 @@ class MySeqObs1(MyObserve):
         self.edge_info_y_abs_diffs = self.edge_info_dict['y_abs_diffs']
         self.edge_info_grads = self.edge_info_dict['grads']
         self.edge_info_grad_ratios = self.edge_info_dict['grad_ratios']   # the sequence of (grad / np.square(next_grad))
-        self.edge_info_manual_nystagmus_indices = self.fe.get_manual_nystagmus_indices(value,edge_indices,info_dict=self.edge_info_dict)
+        self.edge_info_manual_nystagmus_indices, self.edge_info_manual_nystagmus_bool_condition = self.fe.get_manual_nystagmus_indices(value,edge_indices,info_dict=self.edge_info_dict)
         self.edge_info_statistical_nystagmus_indices = self.fe.get_statistical_nystagmus_indices(value, edge_indices, info_dict=self.edge_info_dict)
 
 
@@ -419,7 +421,7 @@ class MyGuiModule(QWidget):
             self.rgb_npimgs = []
         else:
             self.rgb_npimgs = rgb_npimgs
-        self.parent_=parent
+        self.parent_= parent
         self.MODEL_HEIGHT = 240
         self.MODEL_WIDTH = 320
         self.DISPLAY_RESIZE_WIDTH = self.MODEL_WIDTH * 2 + 20
@@ -800,6 +802,9 @@ class MyGuiModule(QWidget):
 
         self.vlayout_main.addLayout(self.hlayout3)
 
+        self.btn_extract_nystagmus_data = MyQPushButton("make nystagmus pandas data with index list")
+        self.vlayout_main.addWidget(self.btn_extract_nystagmus_data)
+        
         self.setLayout(self.vlayout_main)
         QtGui.QColor
         self.connect_ctl()
@@ -852,6 +857,8 @@ class MyGuiModule(QWidget):
         self.btn_erase_vlist.clicked.connect(self.cb_btn_erase_vlist)
         self.btn_clear_vlist.clicked.connect(self.cb_btn_clear_vlist)
         self.btn_undo_vlist.clicked.connect(self.cb_btn_undo_vlist)
+        self.btn_extract_nystagmus_data.clicked.connect(self.cb_btn_extract_nystagmus_data)
+
 
     def set_new_data(self, rgb_npimgs:np.ndarray, d_inferred_info:dict, parent):
         self.rgb_npimgs = rgb_npimgs
@@ -927,7 +934,7 @@ class MyGuiModule(QWidget):
         f_thres = self.get_ledit_value(self.ledit_filter_frames_thres)
 
         if d_thres == 0 : return
-        if d_thres == '': d_thres=2
+        if d_thres == '': d_thres=1.5
         if f_thres == '': f_thres=5
 
         if flag_filter_modify_base_curve:
@@ -1324,6 +1331,77 @@ class MyGuiModule(QWidget):
         for i in l_items:
             self.vlist_indices.addItem(i)
         self.undo_list.pop()
+
+    def cb_btn_extract_nystagmus_data(self):
+        n = self.vlist_indices.count()
+        if n == 0:
+            QMessageBox.information(self,"QMessageBox","empty index list view.")
+            return
+        
+        index_list = []
+        for i in range(n):
+            item = self.vlist_indices.item(i)
+            l_ = item.text().split(',')
+            start = l_[1].split(':')[-1]
+            end = l_[2].split(':')[-1]
+            index_list.append([int(start),int(end)])
+            
+        labels = np.zeros(self.maximum_index+1)
+        for start, end in index_list:
+            labels[start:end+1] = 1
+            
+        filtered1_x_arr, erased_edge_indices, remain_edge_indices  = self.myfe.filter_modify_base_curve(self.base_x_arr,self.base_edge_indices,value_distance_thres=1.5,frames_thres=5)
+        self.current_selected_x_arr.set(filtered1_x_arr, remain_edge_indices, erased_edge_indices)
+        edge_indices = self.current_selected_x_arr.edge_indices
+        # nystagmus_indices = self.current_selected_x_arr.edge_info_manual_nystagmus_indices
+        nystagmus_bool_condition = self.current_selected_x_arr.edge_info_manual_nystagmus_bool_condition
+        edge_info_dict = self.current_selected_x_arr.edge_info_dict
+        distances1 = edge_info_dict['distances1']
+        distances2 = edge_info_dict['distances2']
+        x_diffs = edge_info_dict['x_diffs']
+        y_diffs = edge_info_dict['y_diffs']
+        grads = edge_info_dict['grads']
+        grad_ratios = edge_info_dict['grad_ratios']
+        if len(edge_indices) != len(distances1) != len(distances2) != len(x_diffs) != len(y_diffs) != len(grads) != len(grad_ratios):
+            raise Exception("from cb_btn_extract_nystagmus_data: lengths not equal.")
+        
+        seek_range = 5
+        data = np.zeros((len(edge_indices)-seek_range*2, (seek_range*2+1)*6+1+1),dtype=np.float32)
+
+        ## make node_infos = [[distances1, distances2, x_diffs, y_diffs, grads, grad_ratios], [distances1, distances2, x_diffs, y_diffs, grads, grad_ratios], ....]
+        node_infos = []
+        for infos in zip(distances1, distances2, x_diffs, y_diffs, grads, grad_ratios):
+            node_infos.append(np.array(infos))
+        
+        ## fill data    
+        j = seek_range
+        for i in range(len(data)):
+            data[i,:-2] = np.concatenate(node_infos[j-seek_range:j+seek_range+1])
+            ## fill label
+            # data[i,-2] = 1 if nystagmus_bool_condition[j] else 0
+            data[i,-2] = labels[edge_indices[j]]
+            ## fill center index
+            data[i,-1] = edge_indices[j] 
+            j += 1
+
+
+        pre_columns1 = [f'prev-{abs(i)}-node' for i in range(-seek_range,0)] + ['center-node'] + [f'next-{i}-node' for i in range(seek_range)]
+        columns = [] 
+        for pre_column in pre_columns1:
+            for additional_str in ['distances1','distances2','x_diffs','y_diffs','grads','grad_ratio']:
+                columns.append(f'{pre_column}-{additional_str}')
+        
+        columns += ['label','center-index']
+        data_pd = pd.DataFrame(data, columns=columns)
+        file_save_path = f'{self.BASE_PATH}/{self.parent_.parent_.FILE_NAME}-{self.lbl_name.text()}_edge_data'
+        data_pd.to_excel(f'{file_save_path}.xlsx')
+        data_pd.to_pickle(f'{file_save_path}.pkl')
+        
+        QMessageBox.information(self,f"QMessageBox",f'save successfully. {self.BASE_PATH}/{self.parent_.parent_.FILE_NAME}-{self.lbl_name.text()}_edge_data with xlsx and pickle format.')
+        
+            
+            
+        
 
 ################ methods
     def update_index(self, **obskargs):
@@ -2058,9 +2136,7 @@ class MyGuiModule(QWidget):
             if edge_idx > len(grads)-1:
                 continue
             axes.text(i-start, meaned_current_selected_x_inner_datas[i-start], f"g({grads[edge_idx]:.1f}), gr({grad_ratios[edge_idx]:.2f})", rotation=30)
-            # axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-self.plt_y_max_gap*0.02, f"d1({distances1[edge_idx]:.2f}), d2({distances2[edge_idx]:.2f})", rotation=30)
             axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-y_gap*0.02, f"d1({distances1[edge_idx]:.2f}), d2({distances2[edge_idx]:.2f})", rotation=30)
-            # axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-self.plt_y_max_gap*0.04, f"x_d({x_diffs[edge_idx]:.2f}), y_d({y_diffs[edge_idx]:.2f})", rotation=30)
             axes.text(i-start, meaned_current_selected_x_inner_datas[i-start]-y_gap*0.04, f"x_d({x_diffs[edge_idx]:.2f}), y_d({y_diffs[edge_idx]:.2f})", rotation=30)
 
         ## draw x_none_indices

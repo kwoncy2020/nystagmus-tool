@@ -345,7 +345,7 @@ class FeatureExtractor:
             grads = data[1:]-data[:-1]
             edge_indices = np.array(list(range(len(grads))))
             
-        if partial != 'all':
+        if partial == 'positive':
             grads = abs(grads)
         
         q1, q3 = np.percentile(grads,[25,75])
@@ -353,7 +353,10 @@ class FeatureExtractor:
         upper_bound = q3 + (iqr * iqr_multiplier_x10)
         lower_bound = q1 - (iqr * iqr_multiplier_x10)
 
-        bool_bound_condition = (grads > upper_bound) | (grads < lower_bound)
+        if partial == 'positive':
+            bool_bound_condition = grads > upper_bound
+        elif partial == 'all':
+            bool_bound_condition = (grads > upper_bound) | (grads < lower_bound)
 
         return [edge_indices[bool_bound_condition], lower_bound, upper_bound]
 
@@ -1154,7 +1157,7 @@ class FeatureExtractor:
         return {'distances1':distances1, 'distances2':distances2, 'x_diffs':x_diffs, 'y_diffs':y_diffs, 'y_abs_diffs':y_abs_diffs, 'grads':grads, 'abs_grads':abs_grads, 'grad_ratios':grad_ratios}
 
 
-    def get_manual_nystagmus_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict = None)->np.ndarray:
+    def get_manual_nystagmus_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict = None)->'list[np.ndarray, np.ndarray]':
         ## data must have no None value, only numeric.
         
         # y_diff_min_limit2 = 0.05
@@ -1162,10 +1165,10 @@ class FeatureExtractor:
         min_first_abs_gradient_limit = 0.4
         grad_ratio_min_limit = 0.7
         grad_ratio_max_limit = np.inf
-        min_distance_limit = 2
-        min_next_distance_limit = 2
+        min_distance_limit = 1.5
+        min_next_distance_limit = 1.5
         min_distance_ratio_limit = 0.25
-        y_diff_min_limit = 2
+        y_diff_min_limit = 1.5
 
         if not isinstance(info_dict,dict):
             info_dict = self.get_gradients_infos(data,edge_indices)
@@ -1192,13 +1195,18 @@ class FeatureExtractor:
         ## prev gradient must bigger than next one.
         bool_gradient_compare_condition = abs_grads[:-1] > abs_grads[1:]
         bool_gradient_compare_condition = np.append(bool_gradient_compare_condition, False)
-
-        bool_manual_nystagmus_condition = bool_distance_condition & bool_next_distance_condition & bool_distance_ratio_condition & bool_y_diff_condition & bool_gradient_condition & bool_grad_ratio_condition & bool_gradient_compare_condition
+        
+        ## gradients must be have other direction each other.
+        bool_gradient_condition2 = ((grads[1:] * grads[:-1]) < 0)
+        bool_gradient_condition2 = np.append(bool_gradient_condition2, False)
+        
+        
+        bool_manual_nystagmus_condition = bool_distance_condition & bool_next_distance_condition & bool_distance_ratio_condition & bool_y_diff_condition & bool_gradient_condition & bool_gradient_condition2 & bool_grad_ratio_condition & bool_gradient_compare_condition
 
         manual_nystagmus_indices = edge_indices[bool_manual_nystagmus_condition]
         closest_curve_indices = self.get_most_left_close_curve_indices(data, edge_indices, manual_nystagmus_indices)
         
-        return closest_curve_indices
+        return [closest_curve_indices, bool_manual_nystagmus_condition]
     
     def get_most_left_close_curve_indices(self, data:np.ndarray, edge_indices:np.ndarray, candidate_indices:np.ndarray) -> np.ndarray:
         ## to erase duplicate nearby index.
@@ -1223,10 +1231,11 @@ class FeatureExtractor:
     def get_statistical_nystagmus_indices(self, data:np.ndarray, edge_indices:np.ndarray, info_dict:dict, additional_indices:np.ndarray=np.array([]))->np.ndarray:
         ## make additional indieces with outliers of the gradient of the data
         outlier_indices1, lower_bound1, upper_bound1 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='all', flag_edge=False)
-        outlier_indices2, lower_bound2, upper_bound2 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='positive', flag_edge=False)
+        # outlier_indices2, lower_bound2, upper_bound2 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='positive', flag_edge=False)
         outlier_indices3, lower_bound3, upper_bound3 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='all', flag_edge=True)
-        outlier_indices4, lower_bound4, upper_bound4 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='positive', flag_edge=True)
-        total_outlier_indices = np.concatenate([outlier_indices1, outlier_indices2, outlier_indices3, outlier_indices4, additional_indices])
+        # outlier_indices4, lower_bound4, upper_bound4 = self.get_gradient_outlier_indices(data, edge_indices, info_dict, iqr_multiplier_x10=15, partial='positive', flag_edge=True)
+        # total_outlier_indices = np.concatenate([outlier_indices1, outlier_indices2, outlier_indices3, outlier_indices4, additional_indices])
+        total_outlier_indices = np.concatenate([outlier_indices1, outlier_indices3, additional_indices])
         total_outlier_indices = np.unique(total_outlier_indices.astype(np.int32))
         
         closest_curve_indices = self.get_most_left_close_curve_indices(data, edge_indices, total_outlier_indices)

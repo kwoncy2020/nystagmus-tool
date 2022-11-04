@@ -1361,6 +1361,8 @@ class MyGuiModule(QWidget):
         x_diffs = edge_info_dict['x_diffs']
         y_diffs = edge_info_dict['y_diffs']
         grads = edge_info_dict['grads']
+        next_grads = grads[1:]
+        next_grads = np.append(next_grads,0)
         grad_ratios = edge_info_dict['grad_ratios']
         if len(edge_indices) != len(distances1) != len(distances2) != len(x_diffs) != len(y_diffs) != len(grads) != len(grad_ratios):
             raise Exception("from cb_btn_extract_nystagmus_data: lengths not equal.")
@@ -1370,7 +1372,7 @@ class MyGuiModule(QWidget):
 
         ## make node_infos = [[distances1, distances2, x_diffs, y_diffs, grads, grad_ratios], [distances1, distances2, x_diffs, y_diffs, grads, grad_ratios], ....]
         node_infos = []
-        for infos in zip(distances1, distances2, x_diffs, y_diffs, grads, grad_ratios):
+        for infos in zip(distances1, distances2, x_diffs, y_diffs, grads, next_grads):
             node_infos.append(np.array(infos))
         
         ## fill data    
@@ -1388,7 +1390,7 @@ class MyGuiModule(QWidget):
         pre_columns1 = [f'prev-{abs(i)}-node' for i in range(-seek_range,0)] + ['center-node'] + [f'next-{i}-node' for i in range(seek_range)]
         columns = [] 
         for pre_column in pre_columns1:
-            for additional_str in ['distances1','distances2','x_diffs','y_diffs','grads','grad_ratio']:
+            for additional_str in ['distances1','distances2','x_diffs','y_diffs','grads','next_grads']:
                 columns.append(f'{pre_column}-{additional_str}')
         
         columns += ['label','center-index']

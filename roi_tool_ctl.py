@@ -5,10 +5,13 @@ from PyQt5 import QtGui
 from PyQt5.QtGui import QImage
 from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal, QMutex
 from PyQt5 import QtCore, QtGui
-import sip
+from my_feature_extractor import FeatureExtractor
 
+## kwoncy_clone (tensorflow 2.6 installed with conda)
 # from keras.models import Model, load_model
-from tensorflow.keras.models import Model, load_model
+# from tensorflow.keras.models import Model, load_model
+## kwoncy-only-pip (tensorflow 2.10 installed with pip)
+from keras.models import Model, load_model
 import cv2, os, time, sys, re, pickle
 import numpy as np
 
@@ -79,8 +82,12 @@ class Worker(QObject):
 class MainCtl():
     def __init__(self,view):
         self.view = view
-        self.model1 = load_model(MODEL_NAME, custom_objects={'dice_score': dice_score})
+        self.MODEL_HEIGHT = 240
+        self.MODEL_WIDTH = 320
+        self.MODEL_NAME = MODEL_NAME
+        self.model1 = load_model(self.MODEL_NAME, custom_objects={'dice_score': dice_score})
         self.model2 = 0
+        self.myfe = FeatureExtractor()
         self.eval_tool = Eval_tool()
         self.l_frames = []
         self.l_frames_gray = []
@@ -111,9 +118,6 @@ class MainCtl():
         self.SAVE_BASE_PATH = "."
         self.SAVE_PATH = None
         self.LOAD_PATH = None
-        self.MODEL_HEIGHT = 240
-        self.MODEL_WIDTH = 320
-        self.MODEL_NAME = MODEL_NAME
 
         ### for drawing the ellipse
         self.X = -1
@@ -568,8 +572,21 @@ class MainCtl():
                                     'heights':self.d_inferred_info['right_heights'], 'radians': self.d_inferred_info['right_radians']}
         
         else:
-            d_lt_inferred_info = None
-            d_rt_inferred_info = None
+            reply = QMessageBox.question(self.view, "center sequences required", "do you want to make center sequences file for extracting index?", QMessageBox.Yes | QMessageBox.No)
+            if reply != QMessageBox.Yes:
+                return
+            self.d_inferred_info = self.myfe.extract_ellipse_infos_dict_on_video(self.CURRENT_FILE_FULL_PATH, self.MODEL_NAME, from_loaded_video_images=self.l_frames_gray)
+            
+            save_file = f'{self.FILE_PATH}/{self.FILE_NAME}_{self.MODEL_NAME}_indices.pkl'
+            with open(save_file,'wb') as f:
+                pickle.dump(self.d_inferred_info,f)
+            
+                        
+            d_lt_inferred_info = {'centers': self.d_inferred_info['left_centers'], 'roundnesses': self.d_inferred_info['left_roundnesses'], 'widths': self.d_inferred_info['left_widths'], \
+                                    'heights':self.d_inferred_info['left_heights'], 'radians': self.d_inferred_info['left_radians']}
+            d_rt_inferred_info = {'centers': self.d_inferred_info['right_centers'], 'roundnesses': self.d_inferred_info['right_roundnesses'], 'widths': self.d_inferred_info['right_widths'], \
+                                    'heights':self.d_inferred_info['right_heights'], 'radians': self.d_inferred_info['right_radians']}
+        
 
         # # self.subview1 = roi_tool_subview1.SubGui1(self.l_resized_frames_lt,self.l_resized_frames_rt, d_lt_inferred_info, d_rt_inferred_info, self)
         # # self.subview1.setWindowTitle(f"index extractor / {self.FILE_NAME_WITH_EXT}")

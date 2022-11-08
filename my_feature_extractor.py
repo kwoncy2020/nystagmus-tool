@@ -9,8 +9,9 @@ from scipy import signal
 from typing import Union, Tuple, List, Set, Dict
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-CURRENT_DEVICE = "/device:CPU:0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+# CURRENT_DEVICE = "/device:CPU:0"
+CURRENT_DEVICE = "/device:GPU:0"
 
 class FeatureExtractor:
 
@@ -60,43 +61,56 @@ class FeatureExtractor:
         return {'centers': center_indices, 'roundnesses': roundnesses, 'widths': widths, 'heights': heights, 'radians': radians}
 
 
-    def extract_ellipse_infos_dict_on_video(self, video_file_path: str, MODEL_NAME: str) -> dict:
+    def extract_ellipse_infos_dict_on_video(self, video_file_path: str, MODEL_NAME: str, from_loaded_video_images:'list[np.ndarray]'= None) -> dict:
         ## prepare to resize video frame images
         MODEL_HEIGHT = self.MODEL_HEIGHT
         MODEL_WIDTH = self.MODEL_WIDTH
-        
-        ## load video
-        if os.path.isfile(video_file_path):
-            cap = cv2.VideoCapture(video_file_path)
-        else:
-            print(video_file_path)
-            raise ValueError("File not found")
-
-        retval, zero_index_frame = cap.read()
-        
-        video_frame_height = zero_index_frame.shape[0]
-        video_frame_width = zero_index_frame.shape[1]
-        video_frame_channel = zero_index_frame.shape[2]
-        print('video_frame_shape: ', zero_index_frame.shape)
-        frames = [zero_index_frame]        
-        
         start_time = time.time()
-        ## reading whole of frames of the video
-        while True:
-            retval, frame = cap.read()
-            if not retval:
-                print("reading whole frames finished")
-                break
+        
+        if not isinstance(from_loaded_video_images, list):
+            ## load video
+            if os.path.isfile(video_file_path):
+                cap = cv2.VideoCapture(video_file_path)
+            else:
+                print(video_file_path)
+                raise ValueError("File not found")
 
-            frames.append(frame)
+            retval, zero_index_frame = cap.read()
+            
+            video_frame_height = zero_index_frame.shape[0]
+            video_frame_width = zero_index_frame.shape[1]
+            # video_frame_channel = zero_index_frame.shape[2]
+            print('video_frame_shape: ', zero_index_frame.shape)
+            frames = [zero_index_frame]        
+            
+            print(f"start to read the video. locate({video_file_path})")
+            ## reading whole of frames of the video
+            while True:
+                retval, frame = cap.read()
+                if not retval:
+                    print("reading whole frames finished")
+                    break
 
-        ## reading frames done
-        end_time = time.time()
-        print("read video done. time: ", end_time - start_time)
-        print("length of frames: ", len(frames))
-        start_time = end_time
-        cap.release()
+                frames.append(frame)
 
+            ## reading frames done
+            end_time = time.time()
+            print("read video done. time: ", end_time - start_time)
+            print("length of frames: ", len(frames))
+            start_time = end_time
+            cap.release()
+        else:
+            print("infer with loaded_video_images.")
+            if len(from_loaded_video_images) == 0 or not isinstance(from_loaded_video_images[0],np.ndarray):
+                raise Exception("from extract_ellipse_infos_dict_on_video: from_loaded_video_images contain wrong value.")
+            frames = from_loaded_video_images
+            video_frame_height = frames[0].shape[0]
+            video_frame_width = frames[0].shape[1]
+            if np.ndim(frames[0]) == 2:
+                video_frame_channel = 1
+            else:
+                video_frame_channel = frames[0].shape[2]
+        
         ## resizing frames and convert to gray
         if video_frame_height != MODEL_HEIGHT or video_frame_width != (MODEL_WIDTH *2):
             frames = [cv2.cvtColor(cv2.resize(frame, (MODEL_WIDTH *2, MODEL_HEIGHT), interpolation=cv2.INTER_LANCZOS4), cv2.COLOR_RGB2GRAY) for frame in frames]
@@ -119,15 +133,18 @@ class FeatureExtractor:
         start_time = end_time
 
         ## model predict
+        print(f"start to infer with the model('{MODEL_NAME}').")
         with tf.device(CURRENT_DEVICE):
             model = load_model(MODEL_NAME, custom_objects={'dice_score': self.dice_score})
             index = 0
 
+            print("left_frames prediction start.")
             left_preds = model.predict(left_frames)
             end_time = time.time()
             print("left_frames prediction done. time: ", end_time - start_time)
             start_time = end_time
 
+            print("right_frames prediction start.")
             right_preds = model.predict(right_frames)
             end_time = time.time()
             print("right_frames prediction done. time: ", end_time - start_time)
@@ -402,7 +419,7 @@ class FeatureExtractor:
             else:
                 most_close_not_none_left_values[i] = temp_left_value
                 temp_left_value = list_[i]
-        ## ex) list_                       = [5,None,None,10,None,25,17]
+        ## ex) list_                       = [5,None,None,10,None,25,27]
         ## most_close_not_none_left_values = [5,   5,   5, 5,  10,10,25]
 
         # temp_right_value = list_[-1]
@@ -1152,7 +1169,8 @@ class FeatureExtractor:
         y_abs_diffs = abs(y_diffs)
         x_diffs = np.append(x_diffs,0)
         abs_grads = np.abs(grads)
-        grad_ratios = abs_grads / (np.append(np.square(grads[1:]),0) + 1e-6)
+        # grad_ratios = abs_grads / (np.append(np.square(grads[1:]),0) + 1e-6)
+        grad_ratios = abs_grads / (np.append(np.abs(grads[1:]),0) + 1e-6)
 
         return {'distances1':distances1, 'distances2':distances2, 'x_diffs':x_diffs, 'y_diffs':y_diffs, 'y_abs_diffs':y_abs_diffs, 'grads':grads, 'abs_grads':abs_grads, 'grad_ratios':grad_ratios}
 

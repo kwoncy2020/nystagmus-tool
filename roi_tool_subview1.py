@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import *
 from PyQt5 import QtCore, QtGui
 import numpy as np
 import pandas as pd
+import pickle as pkl
 from my_feature_extractor import FeatureExtractor
 import matplotlib.pyplot as plt 
 import matplotlib.animation
@@ -34,7 +35,7 @@ class MySeqObs1(MyObserve):
         self.edge_info_dict = {}
         self.edge_info_distances1 = np.array([])
         self.edge_info_distances2 = np.array([])
-        self.edge_info_x_diffs = np.array([])
+        self.edge_info_frame_diffs = np.array([])
         self.edge_info_y_diffs = np.array([])
         self.edge_info_y_abs_diffs = np.array([])
         self.edge_info_grads = np.array([])
@@ -60,7 +61,7 @@ class MySeqObs1(MyObserve):
         self.edge_info_dict = self.fe.get_gradients_infos(value,edge_indices)
         self.edge_info_distances1 = self.edge_info_dict['distances1']
         self.edge_info_distances2 = self.edge_info_dict['distances2']
-        self.edge_info_x_diffs = self.edge_info_dict['x_diffs']
+        self.edge_info_frame_diffs = self.edge_info_dict['x_diffs']
         self.edge_info_y_diffs = self.edge_info_dict['y_diffs']      # y_differences within edge_indices
         self.edge_info_y_abs_diffs = self.edge_info_dict['y_abs_diffs']
         self.edge_info_grads = self.edge_info_dict['grads']
@@ -802,8 +803,13 @@ class MyGuiModule(QWidget):
 
         self.vlayout_main.addLayout(self.hlayout3)
 
-        self.btn_extract_nystagmus_data = MyQPushButton("make nystagmus pandas data with index list")
-        self.vlayout_main.addWidget(self.btn_extract_nystagmus_data)
+        self.hlayout4 = QHBoxLayout()
+        self.btn_extract_nystagmus_data = MyQPushButton("make nystagmus machine learning file")
+        self.btn_extract_filtered_sequence_data = MyQPushButton("make filtered sequence info file")
+        self.hlayout4.addWidget(self.btn_extract_nystagmus_data)
+        self.hlayout4.addWidget(self.btn_extract_filtered_sequence_data)
+        
+        self.vlayout_main.addLayout(self.hlayout4)
         
         self.setLayout(self.vlayout_main)
         QtGui.QColor
@@ -858,6 +864,7 @@ class MyGuiModule(QWidget):
         self.btn_clear_vlist.clicked.connect(self.cb_btn_clear_vlist)
         self.btn_undo_vlist.clicked.connect(self.cb_btn_undo_vlist)
         self.btn_extract_nystagmus_data.clicked.connect(self.cb_btn_extract_nystagmus_data)
+        self.btn_extract_filtered_sequence_data.clicked.connect(self.cb_btn_extract_filtered_sequence_data)
 
 
     def set_new_data(self, rgb_npimgs:np.ndarray, d_inferred_info:dict, parent):
@@ -1356,23 +1363,24 @@ class MyGuiModule(QWidget):
         # nystagmus_indices = self.current_selected_x_arr.edge_info_manual_nystagmus_indices
         nystagmus_bool_condition = self.current_selected_x_arr.edge_info_manual_nystagmus_bool_condition
         edge_info_dict = self.current_selected_x_arr.edge_info_dict
-        distances1 = edge_info_dict['distances1']
-        distances2 = edge_info_dict['distances2']
-        x_diffs = edge_info_dict['x_diffs']
+        
+        distances = edge_info_dict['distances1']
+        next_distances = edge_info_dict['distances2']
+        frame_diffs = edge_info_dict['x_diffs']
         y_diffs = edge_info_dict['y_diffs']
         grads = edge_info_dict['grads']
         next_grads = grads[1:]
         next_grads = np.append(next_grads,0)
         grad_ratios = edge_info_dict['grad_ratios']
-        if len(edge_indices) != len(distances1) != len(distances2) != len(x_diffs) != len(y_diffs) != len(grads) != len(grad_ratios):
+        if len(edge_indices) != len(distances) != len(next_distances) != len(frame_diffs) != len(y_diffs) != len(grads) != len(grad_ratios):
             raise Exception("from cb_btn_extract_nystagmus_data: lengths not equal.")
         
         seek_range = 5
         data = np.zeros((len(edge_indices)-seek_range*2, (seek_range*2+1)*6+1+1),dtype=np.float32)
 
-        ## make node_infos = [[distances1, distances2, x_diffs, y_diffs, grads, grad_ratios], [distances1, distances2, x_diffs, y_diffs, grads, grad_ratios], ....]
+        ## make node_infos = [[distances, next_distances, frame_diffs, y_diffs, grads, grad_ratios], [distances, next_distances, frame_diffs, y_diffs, grads, grad_ratios], ....]
         node_infos = []
-        for infos in zip(distances1, distances2, x_diffs, y_diffs, grads, next_grads):
+        for infos in zip(distances, next_distances, frame_diffs, y_diffs, grads, next_grads):
             node_infos.append(np.array(infos))
         
         ## fill data    
@@ -1390,19 +1398,53 @@ class MyGuiModule(QWidget):
         pre_columns1 = [f'prev-{abs(i)}-node' for i in range(-seek_range,0)] + ['center-node'] + [f'next-{i}-node' for i in range(seek_range)]
         columns = [] 
         for pre_column in pre_columns1:
-            for additional_str in ['distances1','distances2','x_diffs','y_diffs','grads','next_grads']:
+            for additional_str in ['distances1','distances2','frame_diffs','y_diffs','grads','next_grads']:
                 columns.append(f'{pre_column}-{additional_str}')
         
         columns += ['label','center-index']
         data_pd = pd.DataFrame(data, columns=columns)
-        file_save_path = f'{self.BASE_PATH}/{self.parent_.parent_.FILE_NAME}-{self.lbl_name.text()}_edge_data'
-        data_pd.to_excel(f'{file_save_path}.xlsx')
-        data_pd.to_pickle(f'{file_save_path}.pkl')
+        edge_file_name_prefix = f'{self.BASE_PATH}/{self.parent_.parent_.FILE_NAME}-{self.lbl_name.text()}'
+        data_pd.to_excel(f'{edge_file_name_prefix}_edge_data_for_machine_learning.xlsx')
+        data_pd.to_pickle(f'{edge_file_name_prefix}_edge_data_for_machine_learning.pkl')
         
-        QMessageBox.information(self,f"QMessageBox",f'save successfully. {self.BASE_PATH}/{self.parent_.parent_.FILE_NAME}-{self.lbl_name.text()}_edge_data with xlsx and pickle format.')
+        QMessageBox.information(self,f"QMessageBox",f"save successfully. '{edge_file_name_prefix}_edge_data_for_machine_learning' with xlsx and pickle format. ")
         
             
-            
+    def cb_btn_extract_filtered_sequence_data(self):
+        filtered1_x_arr, erased_edge_indices, remain_edge_indices  = self.myfe.filter_modify_base_curve(self.base_x_arr,self.base_edge_indices,value_distance_thres=1.5,frames_thres=5)
+        self.current_selected_x_arr.set(filtered1_x_arr, remain_edge_indices, erased_edge_indices)
+        edge_info_dict = self.current_selected_x_arr.edge_info_dict
+        
+        filtered_sequence_dict = {}
+        filtered_sequence_dict['filtered_datas'] = self.current_selected_x_arr.value
+        edge_indices = self.current_selected_x_arr.edge_indices
+        distances = edge_info_dict["distances1"]
+        next_distances = edge_info_dict["distances2"]
+        frame_diffs = edge_info_dict["x_diffs"]
+        y_diffs = edge_info_dict["y_diffs"]
+        grads = edge_info_dict["grads"]
+        next_grads = grads[1:]
+        next_grads = np.append(next_grads,0)
+        grad_ratios = edge_info_dict["grad_ratios"]
+        if len(edge_indices) != len(distances) != len(next_distances) != len(frame_diffs) != len(y_diffs) != len(grads) != len(grad_ratios):
+            raise Exception("from cb_btn_extract_filtered_sequence_data: lengths not equal.")
+        
+        
+        filtered_sequence_dict['edge_indices'] = edge_indices
+        filtered_sequence_dict['distances'] = distances
+        filtered_sequence_dict['next_distances'] = next_distances
+        filtered_sequence_dict['frame_diffs'] = frame_diffs
+        filtered_sequence_dict['y_diffs'] = y_diffs
+        filtered_sequence_dict['grads'] = grads
+        filtered_sequence_dict['next_grads'] = next_grads
+        filtered_sequence_dict['grad_ratios'] = grad_ratios
+
+        edge_file_name_prefix = f'{self.BASE_PATH}/{self.parent_.parent_.FILE_NAME}-{self.lbl_name.text()}'
+        
+        with open(f"{edge_file_name_prefix}_filtered_sequence_dict.pkl", 'wb') as f:
+            pkl.dump(filtered_sequence_dict, f)
+        
+        QMessageBox.information(self,f"QMessageBox",f"save successfully. '{edge_file_name_prefix}_filtered_sequence_dict.pkl'")
         
 
 ################ methods
@@ -1984,7 +2026,7 @@ class MyGuiModule(QWidget):
     #     grad_ratios = self.current_selected_x_arr.edge_info_grad_ratios
     #     distances1 = self.current_selected_x_arr.edge_info_distances1
     #     distances2 = self.current_selected_x_arr.edge_info_distances2
-    #     x_diffs = self.current_selected_x_arr.edge_info_x_diffs
+    #     x_diffs = self.current_selected_x_arr.edge_info_frame_diffs
     #     y_diffs = self.current_selected_x_arr.edge_info_y_diffs
         
     #     for i in edge_inner_indices:
@@ -2130,7 +2172,7 @@ class MyGuiModule(QWidget):
         grad_ratios = self.current_selected_x_arr.edge_info_grad_ratios
         distances1 = self.current_selected_x_arr.edge_info_distances1
         distances2 = self.current_selected_x_arr.edge_info_distances2
-        x_diffs = self.current_selected_x_arr.edge_info_x_diffs
+        x_diffs = self.current_selected_x_arr.edge_info_frame_diffs
         y_diffs = self.current_selected_x_arr.edge_info_y_diffs
         
         for i in current_edge_indices_inner_range:

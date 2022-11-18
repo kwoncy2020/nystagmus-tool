@@ -8,15 +8,15 @@ from PyQt5 import QtCore, QtGui
 from my_feature_extractor import FeatureExtractor
 
 ## kwoncy_clone (tensorflow 2.6 installed with conda)
-# from keras.models import Model, load_model
 # from tensorflow.keras.models import Model, load_model
+
 ## kwoncy-only-pip (tensorflow 2.10 installed with pip)
 from keras.models import Model, load_model
 import cv2, os, time, sys, re, pickle
 import numpy as np
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
+# os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
 
 from draw_ellipse import *
 from ellipses import *
@@ -30,10 +30,6 @@ np.set_printoptions(threshold=sys.maxsize)
 
 # MODEL_NAME = "new_pupil3_320x240_15376_E15_B5_R3333_S9889.h5"
 MODEL_NAME = "new2_pupil3_320x240_6912_E30_B5_R4444_S9709.h5"
-
-MODEL_HEIGHT = 240
-MODEL_WIDTH = 320
-
 
 
 def dice_score(img1, img2):
@@ -1802,7 +1798,7 @@ class MainCtl():
             maskimg = cv2.imread(file,0)
             if isinstance(maskimg,numpy.ndarray):
                 if maskimg.shape[0] != self.MODEL_HEIGHT or maskimg.shape[1] != self.MODEL_WIDTH:
-                    QMessageBox.information(None, 'QMessageBox', f"from cb_info3_btn_load_current_mask: wrong shape. you loaded - {maskimg.shape}, expected - ({MODEL_HEIGHT},{MODEL_WIDTH}) ")
+                    QMessageBox.information(None, 'QMessageBox', f"from cb_info3_btn_load_current_mask: wrong shape. you loaded - {maskimg.shape}, expected - ({self.MODEL_HEIGHT},{self.MODEL_WIDTH}) ")
                     return
                 self.current_maskimg = maskimg
                 self.set_info3_main_canvas2()
@@ -1823,7 +1819,7 @@ class MainCtl():
 
                 maskimg = cv2.imread(fname[0],0)
                 if maskimg.shape[0] != self.MODEL_HEIGHT or maskimg.shape[1] != self.MODEL_WIDTH:
-                    QMessageBox.information(None, 'QMessageBox', f"from cb_info3_btn_load_mask_file: wrong shape. you loaded - {maskimg.shape}, expected - ({MODEL_HEIGHT},{MODEL_WIDTH}) ")
+                    QMessageBox.information(None, 'QMessageBox', f"from cb_info3_btn_load_mask_file: wrong shape. you loaded - {maskimg.shape}, expected - ({self.MODEL_HEIGHT},{self.MODEL_WIDTH}) ")
                     return
 
                 self.current_maskimg = maskimg

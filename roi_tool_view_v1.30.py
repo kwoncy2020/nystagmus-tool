@@ -1,10 +1,8 @@
 import sys
 from PyQt5.QtWidgets import *
 from PyQt5 import QtCore 
-from roi_tool_ctl import MODEL_HEIGHT, MODEL_WIDTH, MainCtl
+from roi_tool_ctl import  MainCtl
 
-MODEL_HEIGHT
-MODEL_WIDTH
 
 class MainGui(QWidget):
     def __init__(self):

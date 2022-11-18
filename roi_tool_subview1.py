@@ -432,7 +432,6 @@ class MyGuiModule(QWidget):
         self.d_inferred_info = d_inferred_info
         self.no_display_img = np.zeros((1,1),dtype=np.uint8)
         
-        
 
         self.init_members()
         self.init_ui()
@@ -874,6 +873,7 @@ class MyGuiModule(QWidget):
         self.CURRENT_FILE_FULL_PATH = self.parent_.CURRENT_FILE_FULL_PATH
         self.BASE_PATH = self.parent_.BASE_PATH
         self.init_members()
+        self.slide_index.setMaximum(self.maximum_index)
         try:
             self.vlist_indices.clear()
         except Exception as e:
@@ -947,13 +947,15 @@ class MyGuiModule(QWidget):
         if flag_filter_modify_base_curve:
             filtered1_x_arr, erased_edge_indices, remain_edge_indices  = self.myfe.filter_modify_base_curve(self.base_x_arr,self.base_edge_indices,d_thres,f_thres)
             self.current_selected_x_arr.set(filtered1_x_arr, remain_edge_indices, erased_edge_indices)
-
+        elif flag_filter_curve2linear3:
+            self.current_selected_x_arr.set(self.base_x_arr, self.base_edge_indices, np.array([]))
 
     def cb_btn_filter_erased_prev(self):
-        erased_edge_indices = self.current_selected_x_arr.erased_edge_indices
-        if not isinstance(erased_edge_indices, np.ndarray):
+        # erased_edge_indices = self.current_selected_x_arr.erased_edge_indices
+        edge_indices = self.current_selected_x_arr.edge_indices
+        if not isinstance(edge_indices, np.ndarray):
             return
-        candidates = erased_edge_indices[(erased_edge_indices-self.current_index)<0]
+        candidates = edge_indices[(edge_indices-self.current_index)<0]
         if len(candidates) == 0:
             return
         prev_idx = candidates[-1]
@@ -961,10 +963,11 @@ class MyGuiModule(QWidget):
         self.update_index()
 
     def cb_btn_filter_erased_next(self):
-        erased_edge_indices = self.current_selected_x_arr.erased_edge_indices
-        if not isinstance(erased_edge_indices, np.ndarray):
+        # erased_edge_indices = self.current_selected_x_arr.erased_edge_indices
+        edge_indices = self.current_selected_x_arr.edge_indices
+        if not isinstance(edge_indices, np.ndarray):
             return
-        candidates = erased_edge_indices[erased_edge_indices-self.current_index>0]
+        candidates = edge_indices[edge_indices-self.current_index>0]
         if len(candidates) == 0:
             return
         next_idx = candidates[0]
@@ -1341,9 +1344,9 @@ class MyGuiModule(QWidget):
 
     def cb_btn_extract_nystagmus_data(self):
         n = self.vlist_indices.count()
-        if n == 0:
-            QMessageBox.information(self,"QMessageBox","empty index list view.")
-            return
+        # if n == 0:
+            # QMessageBox.information(self,"QMessageBox","empty index list view.")
+            # return
         
         index_list = []
         for i in range(n):
@@ -1354,8 +1357,9 @@ class MyGuiModule(QWidget):
             index_list.append([int(start),int(end)])
             
         labels = np.zeros(self.maximum_index+1)
-        for start, end in index_list:
-            labels[start:end+1] = 1
+        if len(index_list) != 0:
+            for start, end in index_list:
+                labels[start:end+1] = 1
             
         filtered1_x_arr, erased_edge_indices, remain_edge_indices  = self.myfe.filter_modify_base_curve(self.base_x_arr,self.base_edge_indices,value_distance_thres=1.5,frames_thres=5)
         self.current_selected_x_arr.set(filtered1_x_arr, remain_edge_indices, erased_edge_indices)
@@ -1404,10 +1408,16 @@ class MyGuiModule(QWidget):
         columns += ['label','center-index']
         data_pd = pd.DataFrame(data, columns=columns)
         edge_file_name_prefix = f'{self.BASE_PATH}/{self.parent_.parent_.FILE_NAME}-{self.lbl_name.text()}'
-        data_pd.to_excel(f'{edge_file_name_prefix}_edge_data_for_machine_learning.xlsx')
-        data_pd.to_pickle(f'{edge_file_name_prefix}_edge_data_for_machine_learning.pkl')
+        try:
+            data_pd.to_excel(f'{edge_file_name_prefix}_edge_data_for_machine_learning.xlsx')
+            data_pd.to_pickle(f'{edge_file_name_prefix}_edge_data_for_machine_learning.pkl')
+            QMessageBox.information(self,f"QMessageBox",f"save successfully. '{edge_file_name_prefix}_edge_data_for_machine_learning' with xlsx and pickle format. ")
+        except Exception as e:
+            QMessageBox.information(self,"QMessageBox",f"from cb_btn_extract_nystagmus_data: Exception:({e})! \n\nplease check if the file already open. it will cause Permission denied.")
+        # finally:
+        #     QMessageBox.information(self,f"QMessageBox",f"save canceled.")
+            
         
-        QMessageBox.information(self,f"QMessageBox",f"save successfully. '{edge_file_name_prefix}_edge_data_for_machine_learning' with xlsx and pickle format. ")
         
             
     def cb_btn_extract_filtered_sequence_data(self):

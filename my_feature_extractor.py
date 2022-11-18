@@ -2,7 +2,13 @@
 import os, cv2, copy, time
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import Model, load_model
+
+## kwoncy_clone (tensorflow 2.6 installed with conda)
+# from keras.models import Model, load_model
+# from tensorflow.keras.models import Model, load_model
+## kwoncy-only-pip (tensorflow 2.10 installed with pip)
+
+from keras.models import Model, load_model
 from my_eval_tool import Eval_tool
 
 from scipy import signal
@@ -573,16 +579,17 @@ class FeatureExtractor:
         none_indices = np.array(none_indices)
         return [list_1, none_indices]
 
-    def filter_low_pass(self, data) -> np.ndarray:
-        b1 = signal.firwin(21, cutoff=1, fs=300, pass_zero='lowpass')
-        # b = signal.firwin(101, cutoff=5, fs=30, pass_zero='highpass')
-        filtered1 = signal.lfilter(b1, [1.0], data)
+    # ## this function will be deprecated.
+    # def filter_low_pass(self, data) -> np.ndarray:
+    #     b1 = signal.firwin(21, cutoff=1, fs=300, pass_zero='lowpass')
+    #     # b = signal.firwin(101, cutoff=5, fs=30, pass_zero='highpass')
+    #     filtered1 = signal.lfilter(b1, [1.0], data)
 
-        # b2, a2 = signal.butter(11, 0.2)
-        # filtered2 = signal.filtfilt(b2, a2, data)
-        # print(type(filtered2)) # numpy.ndarray
+    #     # b2, a2 = signal.butter(11, 0.2)
+    #     # filtered2 = signal.filtfilt(b2, a2, data)
+    #     # print(type(filtered2)) # numpy.ndarray
         
-        return filtered1
+    #     return filtered1
 
     def get_curve_indices(self, data : Union[list, np.ndarray]) -> np.ndarray:
         if not isinstance(data, list) and not isinstance(data, np.ndarray):
